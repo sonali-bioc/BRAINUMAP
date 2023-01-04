@@ -1,0 +1,424 @@
+---
+title: "Reproducing Figure5"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+
+```{r}
+rm(list=ls())
+
+library(SummarizedExperiment)
+library(GSEABase)
+library(GSVAdata)
+library(GSVA)
+library(edgeR)
+
+maindir = resdir= "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+setwd(maindir)
+
+big_mat = readRDS(file.path(maindir, "data", "log2_tpm_combatseq_cbtn_brain_umap_8_27_2021.rds"))
+
+finaldf = read.delim(file.path(maindir, "tables", "umapdata_with_CBTN_8_27_2021_with_metadata.txt"),
+                     header=TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+rownames(finaldf) = finaldf$sampleName
+finaldf[which(finaldf$group=="GTEX"), "tumor_type"] ="GTEX"
+big_mat = big_mat[, match(finaldf$rnaseq_sampleName, colnames(big_mat)) ]
+
+```
+
+
+
+# calculate GSVA IDH-WT vs GTEx
+
+```{r}
+midx = which(finaldf$tumor_type %in% c("TCGA-IDH-WT", "CGGA-IDH-WT" , "GTEX"))
+my_mat = big_mat[, midx]
+groups = finaldf$tumor_type[midx]
+groups[grep("IDH-WT", groups )] ="IDH-WT"
+
+reactome_res <- gsva(my_mat, reactome_lst,
+                     min.sz=10, max.sz=500, verbose=TRUE)
+kegg_res <- gsva(my_mat, kegg_lst,
+                 min.sz=10, max.sz=500, verbose=TRUE)
+biocarta_res <- gsva(my_mat, biocarta_lst,
+                     min.sz=10, max.sz=500, verbose=TRUE)
+score = rbind(reactome_res, biocarta_res, kegg_res)
+saveRDS(score, file = file.path(resdir, "score_sig_pathways_GTEX_IDH-WT.Rds"))
+
+design <- model.matrix(~ factor(groups))
+colSums(design)
+colnames(design) <- c("GTEX", "GTEXvsIDHWT")
+
+adjPvalueCutoff <- 0.05
+logFCcutoff <- log2(1.25)
+CONTRASTS <- makeContrasts( Group1vs2 = GTEXvsIDHWT, levels = design )
+fit <- lmFit(score, design)
+fit <- eBayes(fit)
+DEgeneSets1 <- topTable(fit, coef="GTEXvsIDHWT", number=Inf,
+                        p.value=adjPvalueCutoff, adjust="BH")
+DEgeneSets1 = cbind(pathway = rownames(DEgeneSets1), DEgeneSets1)
+DEgeneSets1 = as.data.frame(DEgeneSets1)
+
+up_path1 = DEgeneSets1[which(DEgeneSets1$logFC > logFCcutoff & DEgeneSets1$adj.P.Val < 0.05), ]
+down_path1 = DEgeneSets1[which(DEgeneSets1$logFC < -logFCcutoff & DEgeneSets1$adj.P.Val < 0.05), ]
+
+group2 ="IDH-WT"
+comparison = "GTEXvsIDHWT"
+
+if(length(up_reg)!=0 & length(down_reg)!=0){
+  library(writexl)
+  lst = list( allGeneSets1, up_path, down_path)
+  names(lst) = c("allGeneSets1", paste0("up_reg in ", group2), paste0("down_reg in ", group2))
+  write_xlsx(lst, file.path(resdir, paste0("sig_pathways_",comparison,".xlsx")))
+}else{
+  write_xlsx(allGeneSets1, file.path(resdir, paste0("sig_pathways_",comparison,".xlsx")))
+}
+
+```
+
+# calculate GSVA IDH-Mutant vs GTEx
+
+```{r}
+midx = which(finaldf$tumor_type %in% c("TCGA-IDH-Mutant", "CGGA-IDH-Mutant" , "GTEX"))
+
+my_mat = big_mat[, midx]
+groups = finaldf$tumor_type[midx]
+groups[grep("IDH-Mutant", groups )] ="IDH-Mutant"
+
+reactome_res <- gsva(my_mat, reactome_lst,
+                     min.sz=10, max.sz=500, verbose=TRUE)
+kegg_res <- gsva(my_mat, kegg_lst,
+                 min.sz=10, max.sz=500, verbose=TRUE)
+biocarta_res <- gsva(my_mat, biocarta_lst,
+                     min.sz=10, max.sz=500, verbose=TRUE)
+score = rbind(reactome_res, biocarta_res, kegg_res)
+saveRDS(score, file = file.path(resdir, "score_sig_pathways_GTEX_IDH-WT.Rds"))
+
+design <- model.matrix(~ factor(groups))
+colnames(design) <- c("GTEX", "GTEXvsIDHMut")
+
+adjPvalueCutoff <- 0.05
+logFCcutoff <- log2(1.25)
+CONTRASTS <- makeContrasts( Group1vs2 = GTEXvsIDHWT, levels = design )
+fit <- lmFit(score, design)
+fit <- eBayes(fit)
+DEgeneSets1 <- topTable(fit, coef="GTEXvsIDHMut", number=Inf,
+                        p.value=adjPvalueCutoff, adjust="BH")
+DEgeneSets1 = cbind(pathway = rownames(DEgeneSets1), DEgeneSets1)
+DEgeneSets1 = as.data.frame(DEgeneSets1)
+
+up_path2 = DEgeneSets1[which(DEgeneSets1$logFC > logFCcutoff & DEgeneSets1$adj.P.Val < 0.05), ]
+down_path2 = DEgeneSets1[which(DEgeneSets1$logFC < -logFCcutoff & DEgeneSets1$adj.P.Val < 0.05), ]
+
+group2 ="IDH-Mutant"
+comparison = "GTEXvsIDHMut"
+
+if(length(up_reg)!=0 & length(down_reg)!=0){
+  library(writexl)
+  lst = list( allGeneSets1, up_path, down_path)
+  names(lst) = c("allGeneSets1", paste0("up_reg in ", group2), paste0("down_reg in ", group2))
+  write_xlsx(lst, file.path(resdir, paste0("sig_pathways_",comparison,".xlsx")))
+}else{
+  write_xlsx(allGeneSets1, file.path(resdir, paste0("sig_pathways_",comparison,".xlsx")))
+}
+
+```
+
+
+# calculate GSVA Oligodendroglioma vs GTEx
+
+```{r}
+midx = which(finaldf$tumor_type %in% c("TCGA-Oligo", "CGGA-Oligo" , "GTEX"))
+my_mat = big_mat[, midx]
+groups = finaldf$tumor_type[midx]
+groups[grep("Oligo", groups )] ="Oligo"
+
+reactome_res <- gsva(my_mat, reactome_lst,
+                     min.sz=10, max.sz=500, verbose=TRUE)
+kegg_res <- gsva(my_mat, kegg_lst,
+                 min.sz=10, max.sz=500, verbose=TRUE)
+biocarta_res <- gsva(my_mat, biocarta_lst,
+                     min.sz=10, max.sz=500, verbose=TRUE)
+score = rbind(reactome_res, biocarta_res, kegg_res)
+design <- model.matrix(~ factor(groups))
+colnames(design) <- c("GTEX", "GTEXvsOligo")
+
+adjPvalueCutoff <- 0.05
+logFCcutoff <- log2(1.25)
+
+CONTRASTS <- makeContrasts( Group1vs2 = GTEXvsOligo,
+                            levels = design )
+fit <- lmFit(score, design)
+fit <- eBayes(fit)
+DEgeneSets1 <- topTable(fit, coef="GTEXvsOligo", number=Inf,
+                        p.value=adjPvalueCutoff, adjust="BH")
+
+DEgeneSets1 = cbind(pathway = rownames(DEgeneSets1), DEgeneSets1)
+DEgeneSets1 = as.data.frame(DEgeneSets1)
+
+up_path3 = DEgeneSets1[which(DEgeneSets1$logFC > logFCcutoff & DEgeneSets1$adj.P.Val < 0.05), ]
+down_path3 = DEgeneSets1[which(DEgeneSets1$logFC < -logFCcutoff & DEgeneSets1$adj.P.Val < 0.05), ]
+
+group2 ="IDH-Oligo"
+comparison = "GTEXvsOligo"
+
+if(length(up_reg)!=0 & length(down_reg)!=0){
+  library(writexl)
+  lst = list( allGeneSets1, up_path, down_path)
+  names(lst) = c("allGeneSets1", paste0("up_reg in ", group2), paste0("down_reg in ", group2))
+  write_xlsx(lst, file.path(resdir, paste0("sig_pathways_",comparison,".xlsx")))
+}else{
+  write_xlsx(allGeneSets1, file.path(resdir, paste0("sig_pathways_",comparison,".xlsx")))
+}
+
+```
+
+# venn diagram
+```{r}
+library(readxl)
+wt_up = read_xlsx("sig_pathways_GTEXvsIDHWT.xlsx", sheet = 2)
+oligo_up = read_xlsx("sig_pathways_GTEXvsOligo.xlsx", sheet = 2)
+mut_up = read_xlsx("sig_pathways_GTEXvsIDHMut.xlsx", sheet = 2)
+
+wt_up = as.data.frame(wt_up)
+oligo_up = as.data.frame(oligo_up)
+mut_up = as.data.frame(mut_up)
+
+wt_path = as.character(wt_up$pathway)
+mut_path = as.character(mut_up$pathway)
+oligo_path = as.character(oligo_up$pathway)
+
+# Prepare a palette of 3 colors with R colorbrewer:
+library(eulerr)
+library(RColorBrewer)
+myCol <- brewer.pal(3, "Pastel2")
+
+
+lst = list(wt_path, mut_path, oligo_path)
+  names(lst) = c("GTEXvsIDHWT" , "GTEXvsIDHMut" , "GTEXvsOligo")
+
+ pdf("test_venn_diagram_12_20_2022.pdf", width =10 , height =10)
+ plot(venn(lst), main = "Up-reg genes (all groups)", fills = myCol,
+      labels = NULL,  quantities = list(cex = 3))
+ dev.off()
+ 
+ common_path = intersect(intersect(wt_path, mut_path), oligo_path)
+ common_pathways = cbind(common_path, wt_up[match(common_path, wt_up[,1]),  c("logFC", "adj.P.Val") ] , 
+                         oligo_up[match(common_path, oligo_up[,1]),c("logFC", "adj.P.Val") ], 
+                         mut_up[match(common_path, mut_up[,1]),c("logFC", "adj.P.Val") ] )
+ colnames(common_pathways)[2:3] = paste0("GTEX_VS_IDH_WT_", colnames(common_pathways)[2:3])
+ colnames(common_pathways)[4:5] = paste0("GTEX_VS_Oligo_", colnames(common_pathways)[4:5])
+ colnames(common_pathways)[6:7] = paste0("GTEX_VS_IDH_Mut_", colnames(common_pathways)[6:7])
+ 
+ writelst = list( wt_up, mut_up, oligo_up, common_pathways)
+ write_xlsx(writelst, file.path(resdir, "tables", paste0("sig_pathways_GTEx_vs_adult_glioma.xlsx")))
+ ```
+
+
+# Fig 5
+
+```{r}
+rm(list=ls())
+
+library(ggplot2)
+library(RColorBrewer)
+library(grid)
+library(gridExtra)
+
+s1 = 1# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "right",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+maindir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+finaldf = read.delim(file.path(maindir, "tables", "umapdata_with_CBTN_8_27_2021_with_metadata.txt"),
+                     header=TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+rownames(finaldf) = finaldf$sampleName
+
+reactome.score = readRDS(file.path( maindir, "data","reactome.pathways_v2.rds"))
+kegg.score = readRDS(file.path(maindir,  "data", "KEGG.pathways_v2.rds"))
+biocarta.score = readRDS(file.path(maindir, "data",  "biocarta.pathways_v2.rds"))
+score = rbind(reactome.score , kegg.score, biocarta.score)
+
+score = score[, match(finaldf$rnaseq_sampleName, colnames(score)) ]
+identical( colnames(score), finaldf$rnaseq_sampleName)
+
+myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+sc <- scale_colour_gradientn(colours = myPalette(20), limits=c(-1, 1))
+
+want = c( "REACTOME_MISMATCH_REPAIR"   ,       
+          "BIOCARTA_RELA_PATHWAY" ,     
+          "BIOCARTA_RAS_PATHWAY", 
+          "BIOCARTA_MHC_PATHWAY", 
+          "REACTOME_MET_ACTIVATES_PI3K_AKT_SIGNALING", 
+          "BIOCARTA_NOTCH_PATHWAY", 
+          "REACTOME_RUNX3_REGULATES_WNT_SIGNALING" , 
+          "REACTOME_HEDGEHOG_LIGAND_BIOGENESIS",
+          "KEGG_DNA_REPLICATION",
+          "REACTOME_TRANSLATION", 
+          "REACTOME_MRNA_SPLICING",   
+          "REACTOME_CELL_CYCLE_CHECKPOINTS", 
+          "REACTOME_PRESYNAPTIC_DEPOLARIZATION_AND_CALCIUM_CHANNEL_OPENING",
+          "REACTOME_TRANSPORT_OF_FATTY_ACIDS",
+          "REACTOME_NEUROTRANSMITTER_RELEASE_CYCLE"  )
+
+all_path_idx = match(want, rownames(score))
+
+plots1 = lapply(all_path_idx, function(path_idx){
+  mat = cbind( finaldf, GSVA = unlist(score[path_idx,]))
+  
+  PATHName = rownames(score)[path_idx]
+  title1 = gsub("_", " ",PATHName)
+  title1 = gsub("REACTOME|KEGG|BIOCARTA", "", title1)
+  
+  p1= ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=GSVA )) +
+    geom_point(size=2) + 
+    sc +
+    ggtitle(title1) +
+    theme_clean + theme(legend.position = "none") 
+  p1
+})
+
+ml <- marrangeGrob(plots1, nrow=3, ncol=5)
+
+pdf( file.path(maindir, "figures","Fig5_gsva_12_20_2022.pdf"), width =35, height = 20)
+print(ml)
+dev.off()
+```
+
+
+
+## Supp Fig 5a - Plot interesting pathways from Adult Top 100 
+
+```{r}
+want = c(
+  "REACTOME_TRNA_PROCESSING_IN_THE_MITOCHONDRION",  
+  "REACTOME_ANTIGEN_PRESENTATION_FOLDING_ASSEMBLY_AND_PEPTIDE_LOADING_OF_CLASS_I_MHC",
+  "REACTOME_TRIF_MEDIATED_PROGRAMMED_CELL_DEATH", 
+  "BIOCARTA_RNA_PATHWAY" ,                                                    
+  "REACTOME_CONDENSATION_OF_PROMETAPHASE_CHROMOSOMES",                        
+  "REACTOME_REGULATED_PROTEOLYSIS_OF_P75NTR",          
+  "REACTOME_EUKARYOTIC_TRANSLATION_INITIATION" ,                              
+  "REACTOME_G2_M_DNA_REPLICATION_CHECKPOINT",                                 
+  "REACTOME_CITRIC_ACID_CYCLE_TCA_CYCLE_",                                 
+  "REACTOME_SIGNALING_BY_PDGFR_IN_DISEASE" ,    
+  "REACTOME_RUNX3_REGULATES_WNT_SIGNALING"  , 
+  "REACTOME_DEPOSITION_OF_NEW_CENPA_CONTAINING_NUCLEOSOMES_AT_THE_CENTROMERE", 
+  "BIOCARTA_ARF_PATHWAY" ,                                                    
+  "REACTOME_UNWINDING_OF_DNA"  ,                                              
+  "BIOCARTA_P53_PATHWAY" )
+all_path_idx = match(want, rownames(score))
+
+plots1 = lapply(all_path_idx, function(path_idx){
+  mat = cbind( finaldf, GSVA = unlist(score[path_idx,]))  
+  PATHName = rownames(score)[path_idx]
+  title1 = gsub("_", " ",PATHName)
+  title1 = gsub("REACTOME |KEGG |BIOCARTA ", "", title1)
+    
+  p1= ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=GSVA )) +
+    geom_point(size=2) + 
+    sc +
+    ggtitle(title1) +
+    theme_clean + theme(
+      legend.position = "none", 
+      plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=25))
+  p1
+})
+
+ml <- marrangeGrob(plots1, nrow=3, ncol=5)
+pdf( file.path(maindir, "figures","Supp_Fig5A_gsva_12_19_2022_top_Adult.pdf"), width =35, height = 20)
+print(ml)
+dev.off()
+```
+
+## Supp Fig 5b  -  Plot interesting pathways from Pediatric & GTEx top 100 
+
+```{r}
+want1 = c(
+ "REACTOME_DIGESTION_OF_DIETARY_CARBOHYDRATE",  
+  "REACTOME_PRESYNAPTIC_DEPOLARIZATION_AND_CALCIUM_CHANNEL_OPENING", 
+  "REACTOME_VOLTAGE_GATED_POTASSIUM_CHANNELS",
+  "REACTOME_FGFR3B_LIGAND_BINDING_AND_ACTIVATION", 
+  "REACTOME_ACETYLCHOLINE_NEUROTRANSMITTER_RELEASE_CYCLE", 
+  "REACTOME_GLUTAMATE_NEUROTRANSMITTER_RELEASE_CYCLE", 
+  "REACTOME_SEROTONIN_NEUROTRANSMITTER_RELEASE_CYCLE", 
+  "REACTOME_DOPAMINE_NEUROTRANSMITTER_RELEASE_CYCLE", 
+  "REACTOME_NOREPINEPHRINE_NEUROTRANSMITTER_RELEASE_CYCLE")
+all_path_idx = match(want1, rownames(score))
+
+plots1 = lapply(all_path_idx, function(path_idx){
+  mat = cbind( finaldf, GSVA = unlist(score[path_idx,]))
+  PATHName = rownames(score)[path_idx]
+  title1 = gsub("_", " ",PATHName)
+  title1 = gsub("REACTOME |KEGG |BIOCARTA ", "", title1)
+  
+  p1= ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=GSVA )) +
+    geom_point(size=2) + 
+    sc +
+    ggtitle(title1) +
+    theme_clean + theme(
+      legend.position = "none", 
+      plot.title = element_text(hjust=0, vjust=0, 
+           lineheight=.8, face="bold", size=25))
+  p1
+})
+
+ml <- marrangeGrob(plots1, nrow=3, ncol=5)
+
+pdf( file.path(maindir, "figures","Supp_Fig5b_gsva_12_19_2022_top_peds_GTEX.pdf"), 
+     width =35, height = 20)
+print(ml)
+dev.off()
+```
+
+## Supp Fig 5c  -  olfactory 
+```{r}
+want = c(  "REACTOME_OLFACTORY_SIGNALING_PATHWAY", 
+  "KEGG_ASCORBATE_AND_ALDARATE_METABOLISM", 
+        #"KEGG_AUTOIMMUNE_THYROID_DISEASE",
+         "REACTOME_GLUCURONIDATION",
+       "REACTOME_XENOBIOTICS")      
+all_path_idx = match(want, rownames(score))
+plots1 = lapply(all_path_idx, function(path_idx){
+  mat = cbind( finaldf, GSVA = unlist(score[path_idx,]))
+  
+  PATHName = rownames(score)[path_idx]
+  title1 = gsub("_", " ",PATHName)
+  message(title1)
+  title1 = gsub("REACTOME|KEGG|BIOCARTA", "", title1)
+  
+  p1= ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=GSVA )) +
+    geom_point(size=2) + 
+    sc +
+    ggtitle(title1) +
+    theme_clean + theme(legend.position = "none") 
+  p1
+})
+ml <- marrangeGrob(plots1, nrow=2, ncol=2)
+print(ml)
+
+pdf( file.path(maindir, "figures","Supp_Fig5c_CGGA_ISLANGS_GSVA.pdf"), width =15, height = 12)
+print(ml)
+dev.off()
+```
