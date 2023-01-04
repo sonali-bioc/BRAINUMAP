@@ -1,0 +1,400 @@
+---
+title: "Reproducing Figure 7"
+author: "Sonali Arora"
+date: "Jan 3, 2022"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+
+# frequency of Mutations
+
+```{r setup}
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(ggplot2)
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+sc <- scale_colour_gradientn(colours = myPalette(12), limits=c(0, 12))
+
+s1 = 1# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 15
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "right",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+gistic_levs = c(2, 1, 0,  -1, -2)
+gistic_cols = c ("firebrick", "firebrick1","grey80",  "dodgerblue", "darkblue"  )
+
+umap_data1 = read.delim("umap_data1.txt", header=T, stringsAsFactors = FALSE)
+
+fusions = read.delim("mutations/high_conf_tcga_cbtn_gene_fusions_hg38_11_8_2022.txt", header=T, stringsAsFactors = FALSE)
+keep = which(fusions$gene_a_type=="protein_coding" | fusions$gene_b_type=="protein_coding")
+fusions = fusions[keep, ]
+rm = which(fusions$Gene_A==fusions$Gene_B)
+fusions = fusions[-rm, ]
+mutdf = read.delim("mutations/tcga_cbtn_mutations.txt", header=T, stringsAsFactors = FALSE)
+
+big_mat = readRDS("log2_tpm_combatseq_cbtn_brain_umap_8_27_2021.rds")
+big_mat = big_mat[,match(umap_data1$sampleName, colnames(big_mat))]
+s1 = 2
+cnv = read.delim("cnv.txt", header=T, stringsAsFactors = FALSE, row.names=1)
+
+#-------------------------------------------------------
+# make a UMAP colored in by gains / deleltion 
+# showing no of genes deletes/ gained 
+#---------------------------------------------------------
+
+a1 = apply(cnv, 2, function(x) c(  length(which(x<0)),  length(which(x==0)), length(which(x> 0))) )
+a1 = t(a1)
+colnames(a1) = c("deletion", "no-change", "gain")
+
+cut_want = cut(as.numeric(as.character(a1[,1])), breaks = c(0, 500, 1000 , 1500, 2000, 5000, 12000))
+cut_want[which(is.na(cut_want)) ] = "(0,500]"
+umap_data1$cn_genes_deletions =a1[,1]
+umap_data1$cn_genes_deletions2 =cut_want
+umap_data1= umap_data1[order(umap_data1$cn_genes_deletions2, decreasing=FALSE), ]
+
+cn_deletion_fig1 =  ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=cn_genes_deletions2 )) +
+  scale_colour_manual(values = c("grey70", "cyan","deepskyblue", "purple",  "forestgreen", "black" )) +
+  geom_point(size=s1) + 
+  theme_clean
+
+cut_want = cut(as.numeric(as.character(a1[,3])), breaks = c(0, 500, 1000 , 1500, 2000, 5000, 12000))
+cut_want[which(is.na(cut_want)) ] = "(0,500]"
+umap_data1$cn_genes_gain =a1[,3]
+umap_data1$cn_genes_gain2 =cut_want
+umap_data1= umap_data1[order(umap_data1$cn_genes_gain2, decreasing=FALSE), ]
+
+cn_gain_fig1 =  ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=cn_genes_gain2 )) +
+  geom_point(size=s1) + 
+  scale_colour_manual(values = c("grey70", "pink", "coral", "chocolate", "red", "black" )) +
+  theme_clean
+
+#---------------------------------------------------
+# color in UMAP showing mutation frequency
+#----------------------------------------------------
+sp = split(mutdf, mutdf[,1])
+nos = sapply(sp, function(x) length(unique(x[,2])) )
+mutfreq = cbind(names(sp),nos)
+
+want = apply(umap_data1, 1,  function(x){
+  g1 = grep("TCGA", x["bioproject_id"])
+  
+  if(length(g1)==1){
+    #tcga
+    tidx = match(x["bioproject_id"], mutfreq[,1])
+    if(length(tidx)!=0){
+      a1 = mutfreq[tidx, 2]
+    }else{
+      a1 = 0
+    }
+  } else{
+    
+    # pediatric
+    nms = unique(unlist(strsplit( x["wgs_sampleName"], ",")))
+    found = match(nms, mutfreq[,1])
+    if(length(found)!=0){
+      a1 = max(mutfreq[found, 2], na.rm=T )
+    }else{
+      a1 =0
+    }
+  }
+  a1
+})
+want = as.numeric(want)
+
+want[which(is.na(want))] = 0
+want[which(want > 2000)] = 2000
+cut_want = cut(want, breaks = c(0, 50, 100, 250, 500, 750,1000, 2000 ))
+cut_want[which(is.na(cut_want)) ] = "(0,50]"
+umap_data1$mut_Freq =want
+umap_data1$mut_Freq2 =cut_want
+umap_data1= umap_data1[order(umap_data1$mut_Freq, decreasing=FALSE), ]
+
+mutations_freq =  ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=mut_Freq2 )) +
+  geom_point(size=s1) + 
+  scale_colour_manual(values = c("grey70","gold", "cyan","pink", "coral",  "red", "black" )) +
+  theme_clean 
+
+#------------------------------------------------------
+# color in UMAP showing gene fusion frequency
+# each gene fusion partner is shown only once. 
+#--------------------------------------------------------
+fusions$pair = apply(fusions, 1, function(x) paste0(c(x["Gene_A"], "_", x["Gene_B"]), collapse = ""))
+sp = split(fusions, fusions[,2])
+nos = sapply(sp, function(x) length(unique(x[,6])) )
+mutfreq = cbind(names(sp),nos)
+
+want = apply(umap_data1, 1,  function(x){
+  g1 = grep("TCGA", x["bioproject_id"])
+  
+  if(length(g1)==1){
+    #tcga
+    tidx = match(x["bioproject_id"], mutfreq[,1])
+    if(length(tidx)!=0){
+      a1 = mutfreq[tidx, 2]
+    }else{
+      a1 = 0
+    }
+  } else{
+    
+    # pediatric
+    nms = unique(unlist(strsplit( x["sampleName"], ",")))
+    found = match(nms, mutfreq[,1])
+    if(length(found)!=0){
+      a1 = max(mutfreq[found, 2], na.rm=T )
+    }else{
+      a1 =0
+    }
+  }
+  a1
+})
+want = as.numeric(want)
+want[which(is.na(want))] = 0
+want[which(want > 2000)] = 2000
+cut_want = cut(want, breaks = c(0, 1,  5, 10, 25, 50, 60 ))
+cut_want[which(is.na(cut_want)) ] = "(0,1]"
+umap_data1$fusion_Freq3 =cut_want
+umap_data1= umap_data1[order(umap_data1$fusion_Freq3, decreasing=FALSE), ]
+
+gene_fusion_freq =  ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=fusion_Freq3 )) +
+  geom_point(size=s1) + 
+  scale_colour_manual(values = c("grey70", "mediumaquamarine", "limegreen", 
+                                 "mediumorchid1","mediumvioletred",  "black" )) +
+  theme_clean
+```
+
+
+# supp fig 4c
+
+```{r}
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+with_tcga_fls ="umapdata_TCGA_with_CBTN_8_27_2021with_metadata.txt"
+with_gtex_fls= "umapdata_GTEX_with_CBTN_8_27_2021with_metadata.txt"
+only_cbtn_fls = "umapdata_only_CBTN_8_27_2021with_metadata.txt"
+
+with_tcga = read.delim(file.path(resdir,
+  "tables", with_tcga_fls), header=T, stringsAsFactors = FALSE)
+
+with_tcga$disease[which(with_tcga$disease=="GTEX")]="GTEx"
+with_tcga$disease[which(with_tcga$disease=="ATRT")]="Atypical Teratoid Thadoid Tumors (ATRT)"
+with_tcga$disease[which(with_tcga$disease=="DNET")]="Dysembryoplastic Neuroepithelial Tumor (DNET)"
+with_tcga$disease[which(with_tcga$disease=="Diffuse intrinsic pontine glioma")]="Diffuse intrinsic pontine glioma (DIPG)"
+with_tcga$disease[which(with_tcga$disease=="ganglioneuroblastoma")]="Ganglioneuroblastoma"
+with_tcga$disease[which(with_tcga$disease=="high-grade glioma")]="Pediatric high-grade glioma"
+with_tcga$disease[which(with_tcga$disease=="low-grade glioma")]="Pediatric low-grade glioma"
+with_tcga$disease[which(with_tcga$disease=="medulloblastoma")]="Medulloblastoma"
+with_tcga$disease[which(with_tcga$disease=="Malignant Peripheral Nerve Sheath Tumor")]="Malignant Peripheral Nerve Sheath Tumor (MPNST)"
+with_tcga$disease[which(with_tcga$disease=="pilocytic astrocytoma")]="Pilocytic astrocytoma"
+with_tcga$disease[which(with_tcga$disease=="pleomorphic xanthoastrocytoma (PXA)")]="Pleomorphic xanthoastrocytoma (PXA)"
+with_tcga$disease[which(with_tcga$disease=="subependymal giant cell astrocytoma(SEGA)")]="Subependymal giant cell astrocytoma (SEGA)"
+with_tcga$disease[which(with_tcga$tumor_type=="TCGA-IDH-Mutant")]="Astrocytomas"
+with_tcga$disease[which(with_tcga$tumor_type=="TCGA-IDH-WT")]="IDH-WT"
+with_tcga$disease[which(with_tcga$tumor_type=="TCGA-Oligo")]="Oligodendrogliomas"
+with_tcga$disease[which(with_tcga$tumor_type=="CGGA-IDH-Mutant")]="Astrocytomas"
+with_tcga$disease[which(with_tcga$tumor_type=="CGGA-IDH-WT")]="IDH-WT"
+with_tcga$disease[which(with_tcga$tumor_type=="CGGA-Oligo")]="Oligodendrogliomas"
+
+all_vals =  c(
+  "green" ,"blue" , "red",
+  "#4DAF4A", "chocolate4", "#7570B3", "#CCCCCC", "#FDC086",
+  "#B3E2CD", "#FFD92F", "#CBD5E8", "brown4" ,"gray48", 
+  "deepskyblue" ,     "gray77", "maroon2", "lightblue2","khaki4",
+  "palevioletred2","black",    "#46f0f0","#aaffc3","coral", 
+  "#808000", 	"#008080", "blue1"	)
+names(all_vals) =  c( 
+  "Oligodendrogliomas", "Astrocytomas", "IDH-WT",
+  "Atypical Teratoid Thadoid Tumors (ATRT)", 
+  "Diffuse intrinsic pontine glioma (DIPG)", 
+  "Dysembryoplastic Neuroepithelial Tumor (DNET)", 
+  "Embryonal tumors", 
+  "Ependymoma NOS", 
+  "Ganglioglioma", 
+  "Ganglioneuroblastoma", 
+  "Glial-neuronal tumor NOS", 
+  "Pediatric high-grade glioma" , 
+  "Pediatric low-grade glioma", 
+  "Medulloblastoma", "Meningioma", 
+  "Malignant Peripheral Nerve Sheath Tumor (MPNST)" , 
+  "Neuroblastoma", "Neurocytoma", "Neurofibroma", 
+  "Pilocytic astrocytoma", 
+  "Pleomorphic xanthoastrocytoma (PXA)", 
+  "Posterior Fossa Ependymoma", "Schwannoma", 
+  "Spinal Cord Ependymoma", 
+  "Subependymal giant cell astrocytoma (SEGA)", 
+  "Supratentorial Ependymoma"
+)
+
+b2 = ggplot(with_tcga, aes(UMAP1_2d, UMAP2_2d, color=disease )) +
+  geom_point(size=2) + 
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  theme_clean +
+  theme(legend.position = "right",  
+                      legend.key.height = unit(0.4, 'cm')) +
+  guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+pdf(file.path(resdir,"figures", "Fig7_12_19_2022.pdf"), width =24, height =12)
+lay <- rbind(c(1,2, 4),
+             c(6 ,3, 5))
+lst = list( b2 + theme(legend.position = "none"), 
+            mutations_freq + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ), 
+            gene_fusion_freq + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ), 
+            cn_gain_fig1 + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ),
+            cn_deletion_fig1 +guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ), 
+             rectGrob(gp=gpar(fill="white", col = "white"))) 
+grid.arrange(grobs = lst, layout_matrix = lay)
+
+dev.off()
+
+
+
+```
+
+
+# boxplot showing frequency of gene fusions
+
+```{r}
+
+library(ggplot2)
+library(scales)
+blank_theme <- theme_minimal()+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+
+tumor_types = unique(umap_data1$tumor_type)
+tumor_types = tumor_types[ -c(match(c("Not available", "ganglioneuroblastoma"), tumor_types))]
+
+res = lapply(tumor_types, function(z){
+  message(z)
+  zidx = which( umap_data1$tumor_type ==z )
+  
+  if(length(grep("TCGA", z))==1){
+    samples = umap_data1[zidx, "bioproject_id"]
+  }else{
+    samples = umap_data1[zidx, "sampleName"]
+    samples = unique(unlist(strsplit(samples, ",")))
+  }
+  
+  widx = which(fusions$Sample %in% samples)
+  ans = fusions[widx, ]
+  id = apply(ans, 1, function(z){
+    paste0(c(z["Sample"], z["Gene_A"], z["Gene_B"]), collapse = "-")
+  })
+  
+  midx = match(unique(id), id)
+  ans = ans[midx, ]
+  ans$patient_no = 1
+  
+  ans$id = apply(ans, 1, function(z){
+    paste0(c( z["Gene_A"], z["Gene_B"]), collapse = "-")
+  })
+  
+  sp = split(ans, ans$Sample)
+  
+  df = data.frame( tumor_type = z, patient = names(sp) , 
+            freq = sapply(sp, function(x) length(unique(x$id))) )
+  df
+})
+temp = do.call(rbind, res)
+
+temp$tumor_type[which(temp$tumor_type=="TCGA-Oligo")]="TCGA-Oligodendrogliomas"
+temp$tumor_type[which(temp$tumor_type=="TCGA-IDH-Mutant")]="TCGA-IDH-Mutant(Astrocytomas)"
+
+temp$tumor_type[which(temp$tumor_type=="ATRT")]="Atypical Teratoid Thadoid Tumors (ATRT)"
+temp$tumor_type[which(temp$tumor_type=="DNET")]="Dysembryoplastic Neuroepithelial Tumor (DNET)"
+temp$tumor_type[which(temp$tumor_type=="Diffuse intrinsic pontine glioma")]="Diffuse intrinsic pontine glioma (DIPG)"
+temp$tumor_type[which(temp$tumor_type=="ganglioneuroblastoma")]="Ganglioneuroblastoma"
+temp$tumor_type[which(temp$tumor_type=="high-grade glioma")]="Pediatric high-grade glioma"
+temp$tumor_type[which(temp$tumor_type=="low-grade glioma")]="Pediatric low-grade glioma"
+temp$tumor_type[which(temp$tumor_type=="medulloblastoma")]="Medulloblastoma"
+temp$tumor_type[which(temp$tumor_type=="Malignant Peripheral Nerve Sheath Tumor")]="Malignant Peripheral Nerve Sheath Tumor (MPNST)"
+temp$tumor_type[which(temp$tumor_type=="pilocytic astrocytoma")]="Pilocytic astrocytoma"
+temp$tumor_type[which(temp$tumor_type=="pleomorphic xanthoastrocytoma(PXA)")]="Pleomorphic xanthoastrocytoma (PXA)"
+temp$tumor_type[which(temp$tumor_type=="subependymal giant cell astrocytoma(SEGA)")]="Subependymal giant cell astrocytoma (SEGA)"
+
+p3  = ggplot(temp, aes(x = tumor_type, y = freq, fill = tumor_type)) +
+  geom_boxplot() + theme_bw() +
+  theme(legend.position = "none")  +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  xlab("") + 
+  ylab("Frequency of gene fusions") #+ ggtitle("Frequency of gene fusions")
+
+# mutations - boxplot
+mutres = lapply(tumor_types, function(z){
+  message(z)
+  zidx = which( umap_data1$tumor_type ==z )
+  
+  if(length(grep("TCGA", z))==1){
+    samples = umap_data1[zidx, "bioproject_id"]
+  }else{
+    samples = umap_data1[zidx, "wgs_sampleName"]
+    samples = unique(unlist(strsplit(samples, ",")))  # these are the wgs sampleNames. 
+  }
+  widx = which(mutdf$sampleName %in% samples)
+  ans = mutdf[widx, ]
+  ans$patient_no = 1
+  
+  rmidx = which(ans$gene=="")
+  if(length(rmidx)!=0){
+    ans = ans[-rmidx, ]
+  }  
+  sp = split(ans, ans$sampleName)
+  df = data.frame( tumor_type = z, patient = names(sp) , 
+                   freq = sapply(sp, function(x) length(unique(x$gene))) )
+  df
+})
+ggdf = do.call(rbind, mutres)
+
+ggdf$tumor_type[which(ggdf$tumor_type=="TCGA-Oligo")]="TCGA-Oligodendrogliomas"
+ggdf$tumor_type[which(ggdf$tumor_type=="TCGA-IDH-Mutant")]="TCGA-IDH-Mutant(Astrocytomas)"
+ggdf$tumor_type[which(ggdf$tumor_type=="ATRT")]="Atypical Teratoid Thadoid Tumors (ATRT)"
+ggdf$tumor_type[which(ggdf$tumor_type=="DNET")]="Dysembryoplastic Neuroepithelial Tumor (DNET)"
+ggdf$tumor_type[which(ggdf$tumor_type=="Diffuse intrinsic pontine glioma")]="Diffuse intrinsic pontine glioma (DIPG)"
+ggdf$tumor_type[which(ggdf$tumor_type=="ganglioneuroblastoma")]="Ganglioneuroblastoma"
+ggdf$tumor_type[which(ggdf$tumor_type=="high-grade glioma")]="Pediatric high-grade glioma"
+ggdf$tumor_type[which(ggdf$tumor_type=="low-grade glioma")]="Pediatric low-grade glioma"
+ggdf$tumor_type[which(ggdf$tumor_type=="medulloblastoma")]="Medulloblastoma"
+ggdf$tumor_type[which(ggdf$tumor_type=="Malignant Peripheral Nerve Sheath Tumor")]="Malignant Peripheral Nerve Sheath Tumor (MPNST)"
+ggdf$tumor_type[which(ggdf$tumor_type=="pilocytic astrocytoma")]="Pilocytic astrocytoma"
+ggdf$tumor_type[which(ggdf$tumor_type=="pleomorphic xanthoastrocytoma(PXA)")]="Pleomorphic xanthoastrocytoma (PXA)"
+ggdf$tumor_type[which(ggdf$tumor_type=="subependymal giant cell astrocytoma(SEGA)")]="Subependymal giant cell astrocytoma (SEGA)"
+
+m3  = ggplot(ggdf, aes(x = tumor_type, y = freq, fill = tumor_type)) +
+  geom_boxplot() + theme_bw() +
+  theme(legend.position = "none")  +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + xlab("") +
+  ylab("Frequency of mutations") #+ ggtitle("Frequency of mutations")
+
+pdf(file.path(resdir,"figures", "Supp_Fig7_12_19_2022.pdf"), width =12)
+lay <- rbind(c(1,2) )
+lst = list( m3 + coord_flip(), 
+            p3 + coord_flip()) 
+grid.arrange(grobs = lst, layout_matrix = lay)
+dev.off()
+```
