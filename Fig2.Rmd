@@ -1,0 +1,278 @@
+---
+title: "Reproducing Figure 2"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup}
+
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(ggplot2)
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+sc <- scale_colour_gradientn(colours = myPalette(12), limits=c(0, 12))
+
+s1 = 2# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "right",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+theme_sa <- theme_classic() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    axis.text=element_text(size=axis_text_size),
+    axis.title=element_text(size=axis_title_size),
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "none",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+setwd(resdir)
+umap_data1 = read.delim("tables/umapdata_with_CBTN_8_27_2021_with_metadata.txt", header=T, stringsAsFactors = FALSE)
+
+all_vals = c("yellowgreen","purple" ,"orange" ,"deeppink", "dodgerblue")
+names(all_vals) =  c("GTEx","TCGA-GBM", "TCGA-LGG","CGGA", "CBTN")
+```
+# Fig 2 - TCGA figures
+```{r}
+# work with only gliomas
+tsne_data1 = umap_data1[which(umap_data1$group %in% c("TCGA-LGG", "TCGA-GBM")), ]
+tsne_data1 = tsne_data1[-c(which(tsne_data1$tumor_type == "TCGA-GBM-Matched-Normal")), ]
+
+tsne_data1$group = factor(tsne_data1$group, levels = c("TCGA-GBM", "TCGA-LGG"))
+tcga_fig1 =  ggplot(tsne_data1, aes(UMAP1_2d, UMAP2_2d, color=group )) +
+  geom_point(size=2) + 
+  ggtitle("TCGA: Cancer Types") +
+  scale_colour_manual(labels =c("TCGA-GBM", "TCGA-LGG") ,
+                      values = c("purple", "orange")) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+tsne_data1$tumor_type[which(tsne_data1$tumor_type=="TCGA-IDH-WT")]="IDH-WT"
+tsne_data1$tumor_type[which(tsne_data1$tumor_type=="TCGA-Oligo")]="Oligodendrogliomas"
+tsne_data1$tumor_type[which(tsne_data1$tumor_type=="TCGA-IDH-Mutant")]="Astrocytomas"# Astrocytomas == IDH-Mutant 
+table(tsne_data1$tumor_type, useNA="always")
+
+tsne_data1$tumor_type = factor(tsne_data1$tumor_type, levels = c("Oligodendrogliomas", "Astrocytomas", "IDH-WT"))
+tcga_fig2 =  ggplot(tsne_data1[which(!is.na(tsne_data1$tumor_type)), ], 
+                    aes(UMAP1_2d, UMAP2_2d, color=tumor_type  )) +
+  geom_point(size=2) + 
+  ggtitle("TCGA : subtypes") +
+  scale_colour_manual(labels =c("Oligodendrogliomas", "Astrocytomas", "IDH-WT") ,
+                      values = c("green", "blue", "red")) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )+ 
+  theme(legend.position = c(0, 0.85))
+
+#-----------------------------
+# info from 2016 paper
+#--------------------------
+info = read.delim("~/HollandLabShared/Sonali/MultiDisease_Paper/Papers/tcga_info_supp_table1_Verhaak_2016.txt", 
+                  header=T, stringsAsFactors = FALSE)
+info = info[match(tsne_data1$bioproject_id, info[,1]) , ]
+mat= tsne_data1
+mat$Age = info$Age..years.at.diagnosis.
+mat$Histology = info$Histology
+mat$Chr.7.gain.Chr.10.loss = info$Chr.7.gain.Chr.10.loss
+mat$Chr.19.20.co.gain = info$Chr.19.20.co.gain
+mat$TERT.promoter.status = info$TERT.promoter.status
+mat$MGMT.promoter.status = info$MGMT.promoter.status
+mat$ATRX.status = info$ATRX.status
+mat$Transcriptome.Subtype = info$Transcriptome.Subtype
+mat$Supervised.DNA.Methylation.Cluster = info$Supervised.DNA.Methylation.Cluster
+mat$X1p.19q.codeletion = info$X1p.19q.codeletion
+
+myPalette <- colorRampPalette(rev(brewer.pal(20, "Spectral")))
+sc <- scale_colour_gradientn(colours = myPalette(20), limits=c(14, 90))
+
+age_fig =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=Age )) +
+  geom_point(size=2) + 
+  ggtitle("Age (years at diagnosis)") +
+  sc +
+  theme_clean 
+
+mat$Chr.7.gain.Chr.10.loss[which(mat$Chr.7.gain.Chr.10.loss!="No combined CNA")]="Chr 7 gain/Chr 10 loss"
+mat$Chr.7.gain.Chr.10.loss[ which(is.na(mat$Chr.7.gain.Chr.10.loss)) ] ="No combined CNA"
+mat = mat[ order(mat$Chr.7.gain.Chr.10.loss, decreasing =T), ]
+chr7_10_fig=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=Chr.7.gain.Chr.10.loss )) +
+  geom_point(size=2) + 
+  scale_colour_manual(values = c("tomato3", "grey80")) +
+  ggtitle("Chr 7 gain/Chr 10 loss") +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+
+mat = mat[ order(mat$X1p.19q.codeletion, decreasing =T), ]
+mat$X1p.19q.codeletion[which(is.na(mat$X1p.19q.codeletion))]="non-codel"
+mat$X1p.19q.codeletion= gsub("^codel$", "Chr1p/19q co-deleted", mat$X1p.19q.codeletion)
+mat$X1p.19q.codeletion= gsub("non-codel", "Not co-deleted", mat$X1p.19q.codeletion)
+
+chr1_19_fig=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=X1p.19q.codeletion )) +
+  geom_point(size=2) + 
+  scale_colour_manual(values = c("tomato3", "grey80")) +
+  ggtitle("Chr 1p/Chr 19q co-deletion") +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+#--------------------------
+# mutation data
+#--------------------------
+mut_df = read.delim("~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/new_analysis_v2/mutations/tcga_cbtn_mutations.txt", 
+                    header=T, stringsAsFactors = FALSE)
+
+mut_df = as.data.frame(mut_df)
+sp = split(mut_df, as.factor(mut_df[,2]))
+wgs_samplenames = unique(mut_df[,1])
+
+mut_figs = lapply(c("ATRX", "TP53", "IDH1") , function(my_goi){
+  mat= tsne_data1
+  mat$mut_status = rep("No Mutation", nrow(mat))
+  
+  mut_ids = sp[[match(my_goi, names(sp))]][,1]
+  midx  = na.omit(match(mut_ids, tsne_data1$bioproject_id))
+  mat$mut_status[midx] = "Mutation"
+  
+  mat = mat[ order(mat$mut_status, decreasing =T), ]
+  mat$mut_status = factor(mat$mut_status, levels =c("No Mutation", "Mutation"))
+  
+  fig2 =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=mut_status )) +
+    geom_point(size=2) + 
+    ggtitle(paste0("Mutation in ", my_goi)) +
+    scale_colour_manual(labels =c("No Mutation", "Mutation") ,
+                        values = c("grey80", "violetred4" )) +
+    theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+  
+  fig2
+})
+atrx_fig= mut_figs[[1]]
+tp53_fig= mut_figs[[2]]
+idh1_fig = mut_figs[[3]]
+
+pdf(file.path(resdir,"figures", "Fig2_only_tcga_12_19_2022.pdf"), width =20, height =12)
+pos = 0.85
+ # with fixed legend
+lst = list( tcga_fig1 + theme(legend.position = c(0, pos)),
+            age_fig + theme(legend.position = "right"),
+            chr7_10_fig + theme(legend.position = c(0, pos)),
+            chr1_19_fig + theme(legend.position = c(0, pos)),
+            idh1_fig + theme(legend.position = c(0, pos)),  
+            tp53_fig + theme(legend.position = c(0, pos)), 
+            atrx_fig + theme(legend.position = c(0, pos)),
+            tcga_fig2 + theme(legend.position = c(0, pos)) )
+
+lay <- rbind(c(1,2, 3,4) ,c(5,6,7,8) )
+grid.arrange(grobs = lst, layout_matrix = lay)
+
+lst = list( tcga_fig1 + theme(legend.position = c(0, pos)),
+            age_fig + theme(legend.position = "none"),
+            chr7_10_fig + theme(legend.position = c(0, pos)),
+            chr1_19_fig + theme(legend.position = c(0, pos)),
+            idh1_fig + theme(legend.position = c(0, pos)),  
+            tp53_fig + theme(legend.position = c(0, pos)), 
+            atrx_fig + theme(legend.position = c(0, pos)),
+            tcga_fig2 + theme(legend.position = c(0, pos)) )
+grid.arrange(grobs = lst, layout_matrix = lay)
+
+dev.off()
+```
+
+
+#  Supp Fig 2 - supplemental figures for only TCGA
+
+```{r}
+
+
+mat$gender[ which(is.na(mat$gender)) ] ="Not available"
+mat$gender = factor(mat$gender, levels =c("Female", "Male", "Not available"))
+p1=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=gender )) +
+  geom_point(size=2) + 
+  ggtitle("Gender") +
+  scale_colour_manual(labels =c("Female", "Male", "Not available") ,
+                        values = c("orange2", "darkslategray", "grey80" )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ) +
+  theme(legend.position = c(0, 0.8))
+
+
+mat$Chr.19.20.co.gain[ which(is.na(mat$Chr.19.20.co.gain)) ] ="No chr 19/20 gain"
+mat$Chr.19.20.co.gain = gsub("Gain chr 19/20", "chr 19/20 co-gain", mat$Chr.19.20.co.gain)
+mat$Chr.19.20.co.gain = gsub("No chr 19/20 gain", "No chr 19/20 co-gain", mat$Chr.19.20.co.gain)
+mat = mat[ order(mat$Chr.19.20.co.gain, decreasing =T), ]
+p2=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=Chr.19.20.co.gain )) +
+  geom_point(size=2) + 
+  scale_colour_manual(values = c("tomato3", "grey80")) +
+  ggtitle("Chr 19/20 co-gain") +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ) +
+  theme(legend.position = c(0, 0.8))
+
+
+
+p3=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=Supervised.DNA.Methylation.Cluster )) +
+  geom_point(size=2) + 
+  ggtitle("Supervised DNA Methylation") +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ) +
+   theme(legend.position = c(0, 0.7))
+
+
+
+p4=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=Transcriptome.Subtype )) +
+  geom_point(size=2) + 
+  ggtitle("Transcription Subtype") +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ) +
+   theme(legend.position = c(0, 0.8))
+
+
+
+mat$MGMT.promoter.status[ which(is.na(mat$MGMT.promoter.status)) ] ="Not available"
+mat$MGMT.promoter.status = factor(mat$MGMT.promoter.status, 
+                      levels =c("Methylated", "Unmethylated", "Not available"))
+mat = mat[ order(mat$MGMT.promoter.status, decreasing =T), ]
+p5=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=MGMT.promoter.status )) +
+  geom_point(size=2) + 
+  ggtitle("MGMT promoter status") + 
+  scale_colour_manual(labels =c("Methylated", "Unmethylated", "Not available") ,
+                        values = c("black", "grey80", "grey80" )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ) +
+  theme(legend.position = c(0, 0.8))
+
+
+mat$TERT.promoter.status[ which(is.na(mat$TERT.promoter.status)) ] ="Not available"
+mat$TERT.promoter.status = factor(mat$TERT.promoter.status, 
+                      levels =c("Mutant", "WT", "Not available"))
+mat = mat[ order(mat$TERT.promoter.status, decreasing =T), ]
+p6=  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=TERT.promoter.status )) +
+  geom_point(size=2) + 
+  ggtitle("TERT promoter status") +
+  scale_colour_manual(labels =c("Mutant", "WT", "Not available") ,
+                        values = c("lightseagreen", "grey80", "grey80" )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) ) +
+  theme(legend.position = c(0, 0.8))
+
+pdf(file.path(resdir,"figures", "SuppFig2_12_19_2022.pdf"), width =24, height =12)
+lay <- rbind(c(1,2, 3,4) ,c(5,6, 7, 8) )
+lst = list( p1, p2, p3, p4 , p5, p6) 
+grid.arrange(grobs = lst, layout_matrix = lay)
+dev.off()
+
+```
