@@ -1,0 +1,249 @@
+---
+title: "Reproducing Figure1"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+
+```{r setup}
+
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(ggplot2)
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+sc <- scale_colour_gradientn(colours = myPalette(12), limits=c(0, 12))
+
+s1 = 2# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "right",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+theme_sa <- theme_classic() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    axis.text=element_text(size=axis_text_size),
+    axis.title=element_text(size=axis_title_size),
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "none",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+setwd(resdir)
+umap_data1 = read.delim("tables/umapdata_with_CBTN_8_27_2021_with_metadata.txt", header=T, stringsAsFactors = FALSE)
+
+all_vals = c("yellowgreen","purple" ,"orange" ,"deeppink", "dodgerblue")
+names(all_vals) =  c("GTEx","TCGA-GBM", "TCGA-LGG","CGGA", "CBTN")
+```
+
+# Fig 1a 
+
+```{r}
+umap_data1$group = gsub("GTEX", "GTEx", umap_data1$group)
+umap_data1$group = factor(umap_data1$group , levels = names(all_vals))
+
+a1 = ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=group )) +
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  geom_point(size=2) + 
+  theme_clean +
+  theme(legend.position = "bottom") + 
+  guides(colour = guide_legend(override.aes = list(size=4)))
+
+
+pdf(file.path(resdir,"figures", "Fig1a_12_19_2022.pdf"), width =10)
+print(a1)
+dev.off()
+```
+
+# Fig 1b
+```{r}
+new_mat = umap_data1[ which(umap_data1$disease=="GTEX"), ]
+
+# UMAP for GTEX petals 
+tissue_values = c( "forestgreen", 
+                   "blueviolet", "darkmagenta", "deeppink", 
+                   "cyan", "deepskyblue", "dodgerblue4",    
+                   brewer.pal(name="YlOrRd", n = 6), 
+                   "indianred4","grey60")
+names(tissue_values) = c(
+  "Cerebellum", # cluster - 1
+  "Caudate",  "Nucleus accumbens", "Putamen", # cluster - 4
+  "Spinal cord", "Substantia nigra", "Hypothalamus",  # cluster - 2
+  "Amygdala", "BA24",   "Cerebral cortex", "Cortex","Frontal Cortex(BA9)","Hippocampus", # cluster -3
+  "DLPFC", "STG/BA22")
+
+new_mat$tissue_site_1 = factor(new_mat$tissue_site_1 , levels = names(tissue_values))
+plot1= ggplot(new_mat,aes(UMAP1_2d, UMAP2_2d, color=tissue_site_1 )) +
+  geom_point(size=s1) + 
+  scale_colour_manual(labels = names(tissue_values), 
+                      values =tissue_values) + 
+  theme_clean + theme(legend.position = "left",  
+                      legend.key.height = unit(0.4, 'cm')) +
+  guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+
+
+pdf(file.path(resdir,"figures", "Fig1b_only_gtex_12_19_2022.pdf"), width =10)
+print(plot1)
+print(plot1 +theme(legend.position = "none"))
+dev.off()
+```
+
+# Supp Fig 1a
+
+```{r}
+ans_df = read.delim("tables/umapdata_with_CBTN_8_27_2021.txt", header=T, stringsAsFactors = FALSE)
+all_vals = c("yellowgreen","purple" ,"orange" ,"deeppink", "dodgerblue")
+names(all_vals) =  c("GTEX","TCGA-GBM", "TCGA-LGG","CGGA", "CBTN")
+
+a1 = ggplot(ans_df, aes(UMAP1_2d, UMAP2_2d, color=group )) +
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  geom_point(size=2) + 
+  theme_sa + ggtitle("UMAP plot : with batch correction") +
+  xlab("UMAP1") + ylab("UMAP2")
+
+# add in PCA 
+#message(" PCA =", " pc1:", percentVar[1], " pc2:", percentVar[2]) #  pc1:31.76 pc2:15.2
+
+a2 = ggplot(ans_df, aes(PC1, PC2, color=group )) +
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  xlab("PC1: 31.76%") + ylab("PC2: 15.2%") +
+  geom_point(size=2) + 
+  theme_sa + ggtitle("PCA plot : with batch correction")
+  
+a3 = ggplot(ans_df, aes(tSNE_1, tSNE_2, color=group )) +
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  geom_point(size=2) + 
+  theme_sa + ggtitle("tSNE plot : with batch correction") +
+  xlab("tSNE1") + ylab("tSNE2")
+
+umap_data1 = read.delim("tables/no_batch_correction_umapdata_with_CBTN_2_1_2022.txt", header=T, stringsAsFactors = FALSE)
+b1 = ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=group )) +
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  geom_point(size=2) + 
+  theme_sa + ggtitle("UMAP plot : no batch correction") +
+  xlab("UMAP1") + ylab("UMAP2")
+
+b2 = ggplot(umap_data1, aes(PC1, PC2, color=group )) +
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  xlab("PC1: 30.11%") + ylab("PC2: 22.78%") +
+  geom_point(size=2) + 
+  theme_sa + ggtitle("PCA plot : no batch correction")
+ 
+
+b3 = ggplot(umap_data1, aes(tSNE_1, tSNE_2, color=group )) +
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  geom_point(size=2) + 
+  theme_sa +  ggtitle("tSNE plot : no batch correction") +
+  xlab("tSNE1") + ylab("tSNE2")
+
+
+lst2 = list( b2, b3, b1,  a2, a3, a1)
+
+pdf(file.path(resdir, "figures", "Supp_Fig1a_12_19_2022.pdf"), width =30, height = 15)
+grid.arrange(grobs = lst2, layout_matrix = rbind(c(1,2,3), c(4, 5, 6  )), top = "")
+dev.off()
+```
+
+# Supp Fig 1b 
+
+```{r}
+# supp figure for only GTEx
+new_mat = umap_data1[ which(umap_data1$disease=="GTEX"), ]
+info2 = read.csv("~/HollandLabShared/Sonali/MultiDisease_Paper/recount_brain/recount_brain_v2.csv", 
+                   header = T, stringsAsFactors = FALSE)
+
+midx = match(new_mat$rnaseq_sampleName, info2$run_s)
+gtex_info = info2[midx, ]
+
+gtex_info  = gtex_info[, c( "age", "age_units" , "pmi", "pmi_units", 
+           "disease", "rin", 
+           "viability", "sex", "development", "brain_bank", "preparation", "race")]
+new_mat = data.frame(new_mat, gtex_info)
+
+new_mat$gender[ which(is.na(new_mat$gender)) ] ="Not available"
+new_mat$gender = factor(new_mat$gender, levels =c("female", "male", "Not available"))
+
+new_mat$disease.1 = gsub("fast_natural", "fast natural", new_mat$disease.1)
+new_mat$disease.1 = gsub("ill_expected", "ill expected", new_mat$disease.1)
+new_mat$disease.1 = gsub("ill_unexpected", "ill unexpected", new_mat$disease.1)
+new_mat$disease.1 = gsub("violent_fast", "fast violent", new_mat$disease.1)
+table(new_mat$disease.1)
+
+new_mat = new_mat[order(new_mat$pmi, decreasing = FALSE), ]
+pmi= ggplot(new_mat,aes(UMAP1_2d, UMAP2_2d, color=pmi )) +
+  geom_point(size=2) + 
+  scale_colour_gradient(high = "red", low = "green") + 
+  theme_clean + theme(legend.position = c(0, 0.8)) + ggtitle("PMI (mins)")
+
+myPalette <- colorRampPalette(rev(brewer.pal(20, "Spectral")))
+sc <- scale_colour_gradientn(colours = myPalette(20), limits=c(24, 70))
+
+gtex_age= ggplot(new_mat,aes(UMAP1_2d, UMAP2_2d, color=age )) +
+  geom_point(size=2) + 
+  sc + 
+  theme_clean + theme(legend.position = c(0, 0.75)) +
+   ggtitle("Age (years at death)")
+
+gtex_rin= ggplot(new_mat,aes(UMAP1_2d, UMAP2_2d, color=rin )) +
+  geom_point(size=2) + 
+  scale_colour_gradient(high = "black", low = "gold") + 
+  theme_clean + theme(legend.position = c(0, 0.8))  + ggtitle("RNA integrity number (RIN)")
+
+hardy= ggplot(new_mat,aes(UMAP1_2d, UMAP2_2d, color=disease.1 )) +
+  geom_point(size=2) + 
+  theme_clean + guides(colour = guide_legend(override.aes = list(size=4))) +
+  theme(legend.position = c(0, 0.8))  + ggtitle("Hardy score")
+
+gtex_sex= ggplot(new_mat,aes(UMAP1_2d, UMAP2_2d, color=sex )) +
+  geom_point(size=2) + 
+  theme_clean + guides(colour = guide_legend(override.aes = list(size=4))) +
+  theme(legend.position = c(0, 0.8))+ ggtitle("Gender") +
+    scale_colour_manual(labels =c("female", "male", "Not available") ,
+                        values = c("magenta", "darkslategray", "grey95" )) 
+
+gtex_prep= ggplot(new_mat,aes(UMAP1_2d, UMAP2_2d, color=preparation )) +
+  geom_point(size=2) + 
+  theme_clean + guides(colour = guide_legend(override.aes = list(size=4))) +
+  theme(legend.position = c(0, 0.8)) + ggtitle("Preparation of sample")  
+
+pdf(file.path(resdir,"figures", "SuppFig1_only_gtex_multiple_12_19_2022.pdf"), width =20, height =12)
+lst = list( pmi,  gtex_age, hardy, gtex_prep, gtex_sex, gtex_rin)
+lay <- rbind(c(1,2, 3) ,c(4, 5,6) )
+grid.arrange(grobs = lst, layout_matrix = lay)
+dev.off()
+
+```
+
