@@ -1,0 +1,205 @@
+---
+title: "Reproducing Figure 3"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+
+rm(list=ls())
+
+library(ggplot2)
+library(RColorBrewer)
+library(grid)
+library(gridExtra)
+
+s1 = 1# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+     legend.position = c(0, 0.85),
+    #legend.position = "top",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+resdir= "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+setwd(resdir)
+
+finaldf = read.delim(file.path(resdir, "tables", "updated_umap_tcga_cgga_9_15_2021.txt"),
+    header=TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+
+surv_tbl = read.csv("tables/survival_gradient_3-9-2022_839x16.csv", 
+                    header=T, stringsAsFactors = FALSE)
+surv_tbl$OS_years = as.numeric(surv_tbl$OS)/365.25
+
+finaldf$TCGA_Glioma_1p_19q_codel= gsub("^codel$", "Chr1p/19q co-deleted", finaldf$TCGA_Glioma_1p_19q_codel)
+finaldf$TCGA_Glioma_1p_19q_codel= gsub("non-codel", "Not co-deleted", finaldf$TCGA_Glioma_1p_19q_codel)
+
+finaldf$TCGA_Glioma_IDH= gsub("^Mutant$", "IDH-Mut", finaldf$TCGA_Glioma_IDH)
+finaldf$TCGA_Glioma_IDH= gsub("Wildtype", "IDH-WT", finaldf$TCGA_Glioma_IDH)
+
+finaldf$TCGA_Glioma_1p_19q_codel[which(is.na(finaldf$TCGA_Glioma_1p_19q_codel))] = "Not Available"
+finaldf$TCGA_Glioma_IDH[which(is.na(finaldf$TCGA_Glioma_IDH))] = "Not Available"
+
+finaldf$CGGA_Glioma_1p_19q_codel[which(is.na(finaldf$CGGA_Glioma_1p_19q_codel))] = "Not Available"
+finaldf$CGGA_Glioma_IDH[which(is.na(finaldf$CGGA_Glioma_IDH))] = "Not Available"
+finaldf$CGGA_Glioma_Grade[which(is.na(finaldf$CGGA_Glioma_Grade))] = "Not Available"
+
+finaldf$CGGA_Glioma_1p_19q_codel= gsub("^Codel$", "Chr1p/19q co-deleted", finaldf$CGGA_Glioma_1p_19q_codel)
+finaldf$CGGA_Glioma_1p_19q_codel= gsub("Non-codel", "Not co-deleted", finaldf$CGGA_Glioma_1p_19q_codel)
+
+finaldf$CGGA_Glioma_IDH= gsub("^Mutant$", "IDH-Mut", finaldf$CGGA_Glioma_IDH)
+finaldf$CGGA_Glioma_IDH= gsub("Wildtype", "IDH-WT", finaldf$CGGA_Glioma_IDH)
+
+finaldf$TCGA_Glioma_IDH = factor(finaldf$TCGA_Glioma_IDH, 
+                                 levels = c("Not Available", "IDH-Mut", "IDH-WT"))
+finaldf$CGGA_Glioma_IDH = factor(finaldf$CGGA_Glioma_IDH, 
+                                 levels = c("Not Available", "IDH-Mut", "IDH-WT"))
+
+finaldf$TCGA_Glioma_1p_19q_codel = factor(finaldf$TCGA_Glioma_1p_19q_codel, 
+                                          levels = c("Not Available", "Chr1p/19q co-deleted", "Not co-deleted"))
+finaldf$CGGA_Glioma_1p_19q_codel = factor(finaldf$CGGA_Glioma_1p_19q_codel, 
+                                          levels = c("Not Available", "Chr1p/19q co-deleted", "Not co-deleted"))
+
+finaldf$TCGA_Glioma_Grade = factor(finaldf$TCGA_Glioma_Grade, 
+                                   levels = c("Not Available", "2", "3", "4"))
+finaldf$CGGA_Glioma_Grade = factor(finaldf$CGGA_Glioma_Grade, 
+                                   levels = c("Not Available", "2", "3", "4"))
+
+finaldf = finaldf[ order(finaldf$CGGA_Glioma_Grade, decreasing = FALSE), ]
+plot_cgga_grade= ggplot(finaldf, aes(UMAP1_2d, UMAP2_2d, color=CGGA_Glioma_Grade )) +
+  geom_point(size=2) + ggtitle("CGGA Grade") +
+  scale_colour_manual(labels =c("Not Available", "2", "3", "4") ,
+                      values = c("grey80", "yellowgreen", "darkolivegreen" , "red" )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+finaldf = finaldf[ order(finaldf$TCGA_Glioma_Grade, decreasing = FALSE), ]
+plot_tcga_grade= ggplot(finaldf, aes(UMAP1_2d, UMAP2_2d, color=TCGA_Glioma_Grade )) +
+  geom_point(size=2) + ggtitle("TCGA Grade") +
+  scale_colour_manual(labels =c("Not Available", "2", "3", "4") ,
+                      values = c("grey80", "yellowgreen", "darkolivegreen" , "red" )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+finaldf = finaldf[ order(finaldf$TCGA_Glioma_IDH, decreasing = FALSE),]
+plot_tcga_IDH= ggplot(finaldf, aes(UMAP1_2d, UMAP2_2d, color=TCGA_Glioma_IDH )) +
+  geom_point(size=2) + ggtitle("TCGA IDH Mutation Status") +
+  scale_colour_manual(labels =c("Not Available", "IDH-Mut",  "IDH-WT") ,
+                      values = c("grey80", "blue", "red"  )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+finaldf = finaldf[ order(finaldf$CGGA_Glioma_IDH, decreasing = FALSE),]
+plot_cgga_IDH= ggplot(finaldf, aes(UMAP1_2d, UMAP2_2d, color=CGGA_Glioma_IDH )) +
+  geom_point(size=2) + ggtitle("CGGA IDH Mutation Status") +
+  scale_colour_manual(labels =c("Not Available", "IDH-Mut",  "IDH-WT") ,
+                      values = c("grey80", "blue", "red"  )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+
+finaldf = finaldf[ order(finaldf$TCGA_Glioma_1p_19q_codel, decreasing = FALSE),]
+plot_tcga_codel= ggplot(finaldf, aes(UMAP1_2d, UMAP2_2d, color=TCGA_Glioma_1p_19q_codel )) +
+  geom_point(size=2) + ggtitle("TCGA 1p19q co-deletion status") +
+  scale_colour_manual(labels =c("Not Available", "Chr1p/19q co-deleted",  "Not co-deleted") ,
+                      values = c("grey80",  "lightsalmon4", "lightseagreen"  )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+finaldf = finaldf[ order(finaldf$CGGA_Glioma_1p_19q_codel, decreasing = FALSE),]
+plot_cgga_codel= ggplot(finaldf, aes(UMAP1_2d, UMAP2_2d, color=CGGA_Glioma_1p_19q_codel )) +
+  geom_point(size=2) + ggtitle("CGGA 1p19q co-deletion status ") +
+  scale_colour_manual(labels =c("Not Available", "Chr1p/19q co-deleted",  "Not co-deleted") ,
+                      values = c("grey80", "lightsalmon4", "lightseagreen"  )) +
+  theme_clean + guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+
+tempdf = surv_tbl[ -c(which(is.na(surv_tbl$subtype_dataset_nn25))), ]
+
+# make 3 data.frames
+oligo = tempdf[which(tempdf$subtype =="IDHmut-codel"), ] # oligo
+astro = tempdf[which(tempdf$subtype =="IDHmut-non-codel"), ] # astrocytoma
+idh_wt = tempdf[which(tempdf$subtype =="IDHwt"), ]
+
+sc_oligo <- scale_colour_gradientn(colours = colorRampPalette(rev(brewer.pal(9, "YlGn"))), limits=c(0, 20))
+sc_astro <- scale_colour_gradientn(colours = colorRampPalette(rev(brewer.pal(9, "YlGnBu"))),  limits=c(0, 15))
+sc_wt_idh <- scale_colour_gradientn(colours = colorRampPalette(rev(brewer.pal(9, "YlOrRd"))),  limits=c(0, 3))
+
+library(ggnewscale)
+
+surv_plot = ggplot() +
+  geom_point(data = oligo, aes(umap1, umap2, color=OS_years,  shape = dataset), size = 2) +
+  scale_color_distiller(palette = "YlGn", limits =c(0, 20) ) +    
+  new_scale_color() +
+  geom_point(data = astro, aes(umap1, umap2, color=OS_years, shape = dataset), size=2) +
+  scale_color_distiller(palette = "YlGnBu",  limits=c(0, 15)) +  
+  new_scale_color() +
+  geom_point(data = idh_wt,aes(umap1, umap2, color=OS_years, shape = dataset), size=2) +
+  scale_color_distiller(palette = "YlOrRd", limits=c(0, 3)) +  
+  theme_clean  + guides(shape = "none") + 
+  theme(legend.position = "top",  legend.spacing.x = unit(0.7, 'cm'))
+
+pdf(file.path(resdir,"figures", "Fig3_overlay_TCGA_CGGA_side_by_side_12_19_2022.pdf"), width =24, height =12)
+lst = list( plot_tcga_grade, plot_tcga_IDH, plot_tcga_codel,  
+            plot_cgga_grade , plot_cgga_IDH, plot_cgga_codel,surv_plot )
+lay <- rbind(c(1,2, 3, NA), c(4, 5, 6, 7 ))
+grid.arrange(grobs = lst, layout_matrix = lay)
+dev.off()
+```
+
+# Supp Fig 
+
+```{r}
+col_idx = grep( "subtype_dataset", colnames(surv_tbl))
+all_title = gsub("subtype_dataset_nn", "Nearest Neighbor:", colnames(surv_tbl)[col_idx])
+
+rm = grep("25", all_title)
+col_idx = col_idx[-rm] # remove nn25 - shown in main fig.
+all_title = all_title[-rm]
+
+lst2 = lapply( 1:length(col_idx) , function(z){
+  
+  idx = col_idx[z]
+  my_title = all_title[z]
+  tempdf = surv_tbl[ -c(which(is.na(surv_tbl[, idx]))), ]
+
+  # make 3 data.frames
+  oligo = tempdf[which(tempdf$subtype =="IDHmut-codel"), ] # oligo
+  astro = tempdf[which(tempdf$subtype =="IDHmut-non-codel"), ] # astrocytoma
+  idh_wt = tempdf[which(tempdf$subtype =="IDHwt"), ]
+  
+  library(ggnewscale)
+  
+  surv_plot = ggplot() +
+    geom_point(data = oligo, aes(umap1, umap2, color=OS_years,  shape = dataset), size = 2) +
+    scale_color_distiller(palette = "YlGn", limits =c(0, 20) ) +    
+    new_scale_color() +
+    geom_point(data = astro, aes(umap1, umap2, color=OS_years, shape = dataset), size=2) +
+    scale_color_distiller(palette = "YlGnBu",  limits=c(0, 15)) +  
+    new_scale_color() +
+    geom_point(data = idh_wt,aes(umap1, umap2, color=OS_years, shape = dataset), size=2) +
+    scale_color_distiller(palette = "YlOrRd", limits=c(0, 3)) +  
+    
+    theme_clean  + guides(shape = "none") +  
+    theme(legend.position = "none") + ggtitle(my_title) 
+})
+
+pdf(file.path(resdir,"figures", "Supp_Fig3_overlay_TCGA_CGGA_side_by_side_diff_nn_12_19_2022.pdf"), width =12, height =10)
+lay <- rbind(c(1,2, 3), c(4, 5, 6 ))
+grid.arrange(grobs = lst2, layout_matrix = lay)
+dev.off()
+
+```
