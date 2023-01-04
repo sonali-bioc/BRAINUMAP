@@ -1,0 +1,115 @@
+---
+title: "Reproducing Figure6"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup}
+
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(ggplot2)
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+sc <- scale_colour_gradientn(colours = myPalette(12), limits=c(0, 12))
+
+s1 = 1# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "right",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+   
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/new_analysis_v2"
+setwd(resdir)
+umap_data1 = read.delim("~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/new_analysis_v2/umapdata_with_CBTN_8_27_2021_with_metadata.txt", 
+  header=T, stringsAsFactors = FALSE)
+
+big_mat = readRDS("~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/new_analysis_v2/log2_tpm_combatseq_cbtn_brain_umap_8_27_2021.rds")
+big_mat = big_mat[,match(umap_data1$rnaseq_sampleName, colnames(big_mat))]
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+```
+
+
+# Fig 6 : REACTOME MISMATCH REPAIR
+
+```{r}
+goi =c("POLDI", "POLD2","POLD3","POLD4", "EXO1",
+       "MLH1",  "MSH2", "MSH3", "MSH6","LIG1",
+       "RPA1","RPA2","RPA3", "PMS2","PCNA" )
+pdf_name = "gene_expression_full_dataset_REACTOME_MISMATCH_REPAIR.pdf"
+
+l1 = lapply(goi, function(my_goi){
+  mat= umap_data1
+  mat$gene_exp = unlist(big_mat[ match(my_goi, rownames(big_mat)), ])
+  mat = mat[ order(mat$gene_exp, decreasing=FALSE), ]
+  
+  ylim = max(mat$gene_exp)
+  ylow = min(mat$gene_exp )
+  sc <- scale_colour_gradientn(colours = myPalette(ylim), limits=c(ylow, ylim))
+  
+  fig1 =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=gene_exp )) +
+    geom_point(size=2) + 
+    ggtitle(paste0( my_goi)) + sc +
+    theme_clean
+  print(fig1)  
+})
+
+ml <- marrangeGrob(l1, nrow=3, ncol=5)
+pdf(gsub(".pdf", "_multipanel_fig.pdf", pdf_name), width =24, height = 12)
+print(ml)
+dev.off()
+
+```
+
+# Supp Fig 6 : BIOCARTA RELA PATHWAY
+
+````{r}
+goi = c("TNF", "TNFRSF1A", "TNFRSF1B", "CREBBP", "IKBKG", "RELA", "NFKB1", 
+        "CHUK", "EP300", "TRADD", "RIPK1", "FADD", "TRAF6", "NFKBIA")
+pdf_name = "gene_expression_full_dataset_BIOCARTA_RELA_PATHWAY.pdf"
+
+goi = goi[!is.na(match(goi, rownames(big_mat)))]
+
+l1 = lapply(goi, function(my_goi){
+  mat= umap_data1
+  mat$gene_exp = unlist(big_mat[ match(my_goi, rownames(big_mat)), ])
+  mat = mat[ order(mat$gene_exp, decreasing=FALSE), ]
+  
+  ylim = max(mat$gene_exp)
+  ylow = min(mat$gene_exp )
+  sc <- scale_colour_gradientn(colours = myPalette(ylim), limits=c(ylow, ylim))
+  
+  fig1 =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=gene_exp )) +
+    geom_point(size=2) + 
+    ggtitle(paste0( my_goi)) + sc +
+    theme_clean
+  print(fig1)
+ })
+
+ml <- marrangeGrob(l1, nrow=3, ncol=5)
+pdf(gsub(".pdf", "_multipanel_fig.pdf", pdf_name), width =24, height = 12)
+print(ml)
+dev.off()
+
+```
+
