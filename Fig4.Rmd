@@ -1,0 +1,266 @@
+---
+title: "Reproducing Figure4"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+
+```{r}
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(ggplot2)
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+sc <- scale_colour_gradientn(colours = myPalette(12), limits=c(0, 12))
+
+s1 = 1# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=15
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    #legend.key.height = unit(spacing, "cm"),
+    legend.position = "right",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+setwd(resdir)
+
+all_vals2 = c("yellowgreen", "green" ,"blue" , "red")
+names(all_vals2) =  c("GTEx", "Oligodendrogliomas", "Astrocytomas", "IDH-WT")
+
+ped_values =  c(
+  "#4DAF4A", "chocolate4", "#7570B3", "#CCCCCC", "#FDC086",
+  "#B3E2CD", "#FFD92F", "#CBD5E8", "brown4" ,"gray48", 
+  "deepskyblue" ,     "gray77", "maroon2", "lightblue2","khaki4",
+  "palevioletred2","black",    "#46f0f0","#aaffc3","coral", 
+  "#808000", 	"#008080", "blue1"	)
+
+names(ped_values) =  c( 
+  "Atypical Teratoid Thadoid Tumors (ATRT)", 
+  "Diffuse intrinsic pontine glioma (DIPG)", 
+  "Dysembryoplastic Neuroepithelial Tumor (DNET)", 
+  "Embryonal tumors", 
+  "Ependymoma NOS", 
+  "Ganglioglioma", 
+  "Ganglioneuroblastoma", 
+  "Glial-neuronal tumor NOS", 
+  "Pediatric high-grade glioma" , 
+  "Pediatric low-grade glioma", 
+  "Medulloblastoma", "Meningioma", 
+  "Malignant Peripheral Nerve Sheath Tumor (MPNST)" , 
+  "Neuroblastoma", "Neurocytoma", "Neurofibroma", 
+  "Pilocytic astrocytoma", 
+  "Pleomorphic xanthoastrocytoma (PXA)", 
+  "Posterior Fossa Ependymoma", "Schwannoma", 
+  "Spinal Cord Ependymoma", 
+  "Subependymal giant cell astrocytoma (SEGA)", 
+  "Supratentorial Ependymoma"
+)
+
+gtex_vals = "yellowgreen"
+names(gtex_vals) = "GTEx"
+
+```
+
+# fig 4a 
+
+```{r}
+# only CBTN 
+only_cbtn= read.delim(file.path("tables", only_cbtn_fls), header=T, stringsAsFactors = FALSE)
+only_cbtn$disease[which(only_cbtn$tumor_type=="ATRT")]="Atypical Teratoid Thadoid Tumors (ATRT)"
+only_cbtn$disease[which(only_cbtn$tumor_type=="DNET")]="Dysembryoplastic Neuroepithelial Tumor (DNET)"
+only_cbtn$disease[which(only_cbtn$tumor_type=="Diffuse intrinsic pontine glioma")]="Diffuse intrinsic pontine glioma (DIPG)"
+only_cbtn$disease[which(only_cbtn$tumor_type=="ganglioneuroblastoma")]="Ganglioneuroblastoma"
+only_cbtn$disease[which(only_cbtn$tumor_type=="high-grade glioma")]="Pediatric high-grade glioma"
+only_cbtn$disease[which(only_cbtn$tumor_type=="low-grade glioma")]="Pediatric low-grade glioma"
+only_cbtn$disease[which(only_cbtn$tumor_type=="medulloblastoma")]="Medulloblastoma"
+only_cbtn$disease[which(only_cbtn$tumor_type=="Malignant Peripheral Nerve Sheath Tumor")]="Malignant Peripheral Nerve Sheath Tumor (MPNST)"
+only_cbtn$disease[which(only_cbtn$tumor_type=="pilocytic astrocytoma")]="Pilocytic astrocytoma"
+only_cbtn$disease[which(only_cbtn$tumor_type=="pleomorphic xanthoastrocytoma (PXA)")]="Pleomorphic xanthoastrocytoma (PXA)"
+only_cbtn$disease[which(only_cbtn$tumor_type=="subependymal giant cell astrocytoma(SEGA)")]="Subependymal giant cell astrocytoma (SEGA)"
+
+only_cbtn$disease = factor(only_cbtn$disease , levels = names(ped_values))
+
+p1 = ggplot(only_cbtn, aes(UMAP1_2d, UMAP2_2d, color=disease )) +
+  scale_colour_manual(labels =names(ped_values), 
+                      values =ped_values) +
+  geom_point(size=2) + 
+  theme_clean + 
+  theme(legend.position = "right", legend.key.height = unit(0.4, 'cm')) +
+  guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+```
+
+# Fig 4B : BRAIN-UMAP  
+
+```{r}
+umap_data1 = read.delim("tables/umapdata_with_CBTN_8_27_2021_with_metadata.txt", header=T, stringsAsFactors = FALSE)
+
+umap_data1$group = as.character(umap_data1$group )
+umap_data1$group[which(umap_data1$tumor_type=="TCGA-IDH-WT")]="IDH-WT"
+umap_data1$group[which(umap_data1$tumor_type=="TCGA-Oligo")]="Oligodendrogliomas"
+umap_data1$group[which(umap_data1$tumor_type=="TCGA-IDH-Mutant")]="Astrocytomas"# Astrocytomas == IDH-Mutant 
+
+umap_data1$group[which(umap_data1$tumor_type=="CGGA-IDH-WT")]="IDH-WT"
+umap_data1$group[which(umap_data1$tumor_type=="CGGA-Oligo")]="Oligodendrogliomas"
+umap_data1$group[which(umap_data1$tumor_type=="CGGA-IDH-Mutant")]="Astrocytomas"
+
+umap_data1$disease =as.character(umap_data1$disease) 
+umap_data1$disease[which(umap_data1$group!="CBTN")]=umap_data1$group[which(umap_data1$group!="CBTN")]
+
+umap_data1$disease[which(umap_data1$disease=="GTEX")]="GTEx"
+
+umap_data1$disease[which(umap_data1$tumor_type=="ATRT")]="Atypical Teratoid Thadoid Tumors (ATRT)"
+umap_data1$disease[which(umap_data1$tumor_type=="DNET")]="Dysembryoplastic Neuroepithelial Tumor (DNET)"
+umap_data1$disease[which(umap_data1$tumor_type=="Diffuse intrinsic pontine glioma")]="Diffuse intrinsic pontine glioma (DIPG)"
+
+umap_data1$disease[which(umap_data1$tumor_type=="ganglioneuroblastoma")]="Ganglioneuroblastoma"
+umap_data1$disease[which(umap_data1$tumor_type=="high-grade glioma")]="Pediatric high-grade glioma"
+umap_data1$disease[which(umap_data1$tumor_type=="low-grade glioma")]="Pediatric low-grade glioma"
+umap_data1$disease[which(umap_data1$tumor_type=="medulloblastoma")]="Medulloblastoma"
+umap_data1$disease[which(umap_data1$tumor_type=="Malignant Peripheral Nerve Sheath Tumor")]="Malignant Peripheral Nerve Sheath Tumor (MPNST)"
+umap_data1$disease[which(umap_data1$tumor_type=="pilocytic astrocytoma")]="Pilocytic astrocytoma"
+umap_data1$disease[which(umap_data1$tumor_type=="pleomorphic xanthoastrocytoma (PXA)")]="Pleomorphic xanthoastrocytoma (PXA)"
+umap_data1$disease[which(umap_data1$tumor_type=="subependymal giant cell astrocytoma(SEGA)")]="Subependymal giant cell astrocytoma (SEGA)"
+
+all_vals4= c(all_vals2, ped_values)
+umap_data1$disease = factor(umap_data1$disease , levels = names(all_vals4))
+
+width_scale = 15
+p2 = ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=disease )) +
+  scale_colour_manual(labels =names(all_vals4), 
+                      values =all_vals4) +
+  geom_point(size=2) + 
+  theme_clean +
+  guides(colour = guide_legend(ncol =2,override.aes = list(size=4)))
+ 
+#extract legend
+#https://github.com/hadley/ggplot2/wiki/Share-a-legend-between-two-ggplot2-graphs
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+pdf(file.path(resdir, "figures","Fig4_full_dataset_12_19_2022_tumor_types.pdf"), width =14, height = 10)
+mylegend<-g_legend(p2)
+p3 <- grid.arrange(arrangeGrob(p1 + theme(legend.position="none"),
+                         p2 + theme(legend.position="none"),
+                         nrow=1),
+             mylegend, nrow=2,heights=c(6, 4))
+
+dev.off()
+```
+
+# supp fig 4  - epn / medullo subtype
+```{r}
+umap_data1 = read.delim("tables/umapdata_with_CBTN_8_27_2021_with_metadata.txt", header=T, stringsAsFactors = FALSE)
+library(readxl)
+info  = read_xlsx("~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/CBTN/subset_rnaseq_sample_info.xlsx")
+info = as.data.frame(info)
+
+# show subtypes for ependymoma
+umap_data1$test = NA_character_ 
+umap_data1$test[grep("Ependymoma", umap_data1$tumor_type)] =umap_data1$tumor_type[grep("Ependymoma", umap_data1$tumor_type)]
+umap_data1$test[which(is.na(umap_data1$test))] = "Others"
+
+group_colors = c( "#FDC086", "#aaffc3", "#808000",  "blue1"	, "grey80")
+names(group_colors) = c("Ependymoma NOS", "Posterior Fossa Ependymoma", "Spinal Cord Ependymoma", "Supratentorial Ependymoma", "Others")
+
+umap_data1 = umap_data1[ order(umap_data1$test, decreasing=FALSE), ]
+frank_ep1 =  ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=test )) +
+  scale_color_manual(labels =names(group_colors), values =group_colors) +
+  geom_point(size=2) + 
+  theme_clean  + 
+   theme( legend.position = c(0.1, 0.8)) +
+  guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+# show medullo subtype
+info2  = info[which(info$pathology_diagnosis =="Medulloblastoma"), ]
+midx = match( info2[,1], umap_data1$rnaseq_sampleName)
+
+umap_data1$medullo_molecular_subtype  = NA_character_
+umap_data1$medullo_molecular_subtype[ midx] = info2$molecular_subtype
+
+umap_data1$medullo_molecular_subtype[which(is.na(umap_data1$medullo_molecular_subtype))] = "Others"
+umap_data1$medullo_molecular_subtype[which(umap_data1$medullo_molecular_subtype=="MB, To be classified")] = "MB, unclassified"
+umap_data1$medullo_molecular_subtype = gsub("MB,", "MB", umap_data1$medullo_molecular_subtype)
+table(umap_data1$medullo_molecular_subtype)
+
+group_colors2 = c("red", "deepskyblue", "purple", "darkblue", "darkolivegreen3", "grey80")
+names(group_colors2) = c("MB Group3", "MB Group4", "MB SHH", "MB unclassified", "MB WNT","Others")
+
+frank_med =  ggplot(umap_data1, aes(UMAP1_2d, UMAP2_2d, color=medullo_molecular_subtype )) +
+  geom_point(size=2) + 
+  scale_color_manual(labels =names(group_colors2), values =group_colors2) +
+  theme_clean + 
+  theme( legend.position = c(0.1, 0.8)) +
+  guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+
+pdf(file.path(resdir,"figures", "SuppFig4_12_19_2022.pdf"), width =18, height = 12)
+lay <- rbind(c(1,2) ,c(3, 4) )
+lst = list( frank_med, frank_ep1, b2 + theme( legend.position = "none")) 
+grid.arrange(grobs = lst, layout_matrix = lay)
+dev.off()
+```
+
+
+# supp fig 4c
+
+```{r}
+with_tcga_fls ="umapdata_TCGA_with_CBTN_8_27_2021with_metadata.txt"
+with_gtex_fls= "umapdata_GTEX_with_CBTN_8_27_2021with_metadata.txt"
+only_cbtn_fls = "umapdata_only_CBTN_8_27_2021with_metadata.txt"
+with_gtex = read.delim(file.path(
+  "tables", with_gtex_fls), header=T, stringsAsFactors = FALSE)
+with_gtex$disease[which(with_gtex$disease=="GTEX")]="GTEx"
+with_gtex$disease[which(with_gtex$disease=="ATRT")]="Atypical Teratoid Thadoid Tumors (ATRT)"
+with_gtex$disease[which(with_gtex$disease=="DNET")]="Dysembryoplastic Neuroepithelial Tumor (DNET)"
+with_gtex$disease[which(with_gtex$disease=="Diffuse intrinsic pontine glioma")]="Diffuse intrinsic pontine glioma (DIPG)"
+with_gtex$disease[which(with_gtex$disease=="ganglioneuroblastoma")]="Ganglioneuroblastoma"
+with_gtex$disease[which(with_gtex$disease=="high-grade glioma")]="Pediatric high-grade glioma"
+with_gtex$disease[which(with_gtex$disease=="low-grade glioma")]="Pediatric low-grade glioma"
+with_gtex$disease[which(with_gtex$disease=="medulloblastoma")]="Medulloblastoma"
+with_gtex$disease[which(with_gtex$disease=="Malignant Peripheral Nerve Sheath Tumor")]="Malignant Peripheral Nerve Sheath Tumor (MPNST)"
+with_gtex$disease[which(with_gtex$disease=="pilocytic astrocytoma")]="Pilocytic astrocytoma"
+with_gtex$disease[which(with_gtex$disease=="pleomorphic xanthoastrocytoma (PXA)")]="Pleomorphic xanthoastrocytoma (PXA)"
+with_gtex$disease[which(with_gtex$disease=="subependymal giant cell astrocytoma(SEGA)")]="Subependymal giant cell astrocytoma (SEGA)"
+
+b1 = ggplot(with_gtex, aes(UMAP1_2d, UMAP2_2d, color=group )) +
+  scale_colour_manual(labels =c("CBTN", "GTEX"), 
+                      values =c("dodgerblue", "yellowgreen")) +
+  geom_point(size=2) + 
+  theme_clean +
+  theme(legend.position = c(0, 0.8)) + 
+  guides(colour = guide_legend(override.aes = list(size=4)))
+
+all_vals = c(ped_values , gtex_vals)
+with_gtex$disease = factor(with_gtex$disease , levels = names(all_vals))
+
+b2 = ggplot(with_gtex, aes(UMAP1_2d, UMAP2_2d, color=disease )) +
+  geom_point(size=2) + 
+  scale_colour_manual(labels =names(all_vals), 
+                      values =all_vals) +
+  theme_clean +
+  theme(legend.position = "right",  
+                      legend.key.height = unit(0.4, 'cm')) +
+  guides(color=guide_legend(ncol=1 , override.aes = list(size=4)) )
+```
+
+
