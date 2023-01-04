@@ -1,0 +1,307 @@
+---
+title: "Downloading & Processing publicly available datasets"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+In this vignette, we will download normalized gene expression data from two 
+sources - recount2 and CBTN and process them to save as log2 normalized counts.
+
+# downloading data from recount2
+
+
+```{r}
+
+rm(list=ls())
+library(recount)
+setwd("~/HollandLabShared/Sonali/recount_brain")
+meta_v2 = recount::add_metadata(source = 'recount_brain_v2')
+meta_v1 = recount::add_metadata(source = 'recount_brain_v1')
+length(unique(meta_v1$sra_study_s))
+length(unique(meta_v2$sra_study_s))
+setdiff( unique(meta_v2$sra_study_s), unique(meta_v1$sra_study_s) ) # gtex study is in v2/
+save(meta_v2, file = "recount_brain_v2.Rdata")
+
+
+studies = na.omit(unique(meta_v2$sra_study_s))
+lapply(studies, function(x){
+    message(x)
+    if(!file.exists(file.path(x, 'rse_gene.Rdata'))) {
+        download_study(x)
+    }
+})
+
+lapply(studies, function(x){
+    message(x)
+    if(!file.exists(file.path(x, 'rse_tx.Rdata'))) {
+        download_study(x, type="rse-tx")
+    }
+})
+
+if(!file.exists(file.path('TCGA', 'rse_gene_brain.Rdata'))) {
+    
+    dir.create('TCGA', showWarnings = FALSE)
+    downloader::download('http://duffel.rail.bio/recount/v2/TCGA/rse_gene_brain.Rdata', destfile = 
+                             'TCGA/rse_gene_brain.Rdata', mode = 'wb')
+}
+```
+
+# Creating log2 TPM counts. 
+
+```{r}
+
+rm(list=ls())
+library(rtracklayer)
+library(recount)
+setwd("~/HollandLabShared/Sonali/recount_brain")
+resdir = "~/HollandLabShared/Sonali/recount_brain/log2_tpm_rse"
+
+rse_gene = get(load(file.path("TCGA", 'rse_gene_brain.Rdata')))
+gtf = import("annotations/gencode.v25.annotation.gtf")
+gtf = gtf[gtf$gene_type=="protein_coding", ]
+gtf = gtf[gtf$type=="gene", ]
+idx = match(gtf$gene_id, names(rowRanges(rse_gene)))
+export(gtf, con= file.path(resdir, "prot_coding_gencode.v25.annotation.gtf"), format = "GTF")
+
+# convert tcga to log2(tpm+1) 
+rpkm <- getRPKM(scale_counts(rse_gene))
+tpm = apply(rpkm, 2, function(x){
+    (x/sum(x))*10^6
+})
+log2_tpm =log2(tpm+1)
+assay(rse_gene) = log2_tpm
+
+# subset to only protein-coding genes. 	
+rse_gene = rse_gene[idx, ]
+rowRanges(rse_gene)$gencode_gene_name = gtf$gene_name
+save(rse_gene, file = file.path(resdir, paste0( "TCGA_rse_gene.RData")) )
+
+```
+
+
+
+# Combining data from recount2
+
+```{r}
+rm(list=ls())
+library(SummarizedExperiment)
+library(rtracklayer)
+library(recount)
+
+setwd("~/HollandLabShared/Sonali/MultiDisease_Paper/recount_brain")
+meta_v2 = get(load( "recount_brain_v2.Rdata"))
+
+data_dir = "~/HollandLabShared/Sonali/MultiDisease_Paper/recount_brain/log2_tpm_rse"
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_March_2022"
+tcga_meta = meta_v2[which(meta_v2[,"Dataset"]=="TCGA"), ]
+gtex_meta = meta_v2[ which(meta_v2[,"Dataset"]=="GTEX"), ]
+
+# TCGA
+tcga_rse = get(load( file.path(data_dir,  "TCGA_rse_gene.RData") ))
+idx2 = match(tcga_meta$run_s, colnames(tcga_rse))
+table(is.na(idx2))
+tcga_rse = tcga_rse[, idx2 ]
+if(identical(tcga_meta$run_s, colnames(tcga_rse))){
+  rownames(tcga_meta) =tcga_meta$run_s
+}
+tcga_mat = assay(tcga_rse)
+
+#GTEX
+gtex_rse = get(load( file.path(data_dir,  "GTEX_rse_gene.RData") ))
+gtex_rse = gtex_rse[, which(colData(gtex_rse)$smts=="Brain")]
+idx = match(gtex_meta$run_s, colnames(gtex_rse))
+table(is.na(idx))
+gtex_rse = gtex_rse[, idx ]
+if(identical(gtex_meta$run_s, colnames(gtex_rse))){
+  rownames(gtex_meta) =gtex_meta$run_s
+}
+gtex_mat = assay(gtex_rse)
+
+# CGGA
+other_rse = get(load(file.path(data_dir, "other_brain_rse_gene_6_3_2020.RData")))
+keep_study =c("SRP027383") # CGGA
+keep_col = which(other_rse$sra_study_s %in% keep_study)
+other_rse = other_rse[, keep_col]
+
+other_mat = assay(other_rse)
+other_meta = as.data.frame(colData(other_rse))
+
+gtex_meta$disease_status = rep("GTEx" , nrow(gtex_meta))
+tcga_meta$Dataset2 = as.character (tcga_meta$Dataset)
+gtex_meta$Dataset2 = as.character(gtex_meta$Dataset)
+other_meta$Dataset2 = "CGGA"
+
+tcga_meta[which(tcga_meta$tissue=="LGG"),"Dataset2"] = "TCGA-LGG"
+tcga_meta[which(tcga_meta$tissue=="GBM"),"Dataset2"] = "TCGA-GBM"
+tcga_meta$sra_study_s ="TCGA"
+
+# COMBINE MATRIX  & COLDATA FOR COMPUTATION 
+mat1 = cbind(tcga_mat, gtex_mat, other_mat)
+finaldf = rbind(tcga_meta, gtex_meta, other_meta)
+
+
+want_cols = c("Dataset2" , "disease" ,
+   "age" , "age_units", "development" , "sex", "race", 
+   "tissue_site_1" , 
+  "clinical_stage_2", # primary, recurrent, solid tumor and so on..
+  "viability", # biopsy or post mortem
+   "bioproject_s", "run_s",   "sample_name_s" , "sra_sample_s"   ,"sra_study_s", 
+  "pmi", "pmi_units")
+
+finaldf = finaldf[, match(want_cols, colnames(finaldf))]
+
+control_idx2 = which(is.na(finaldf$tissue_site_1))
+finaldf$tissue_site_1[control_idx2] = "Not available"
+
+finaldf$development[which(is.na(finaldf$development))] = "Not available"
+
+finaldf$tissue_site_1[grep("BA24",  finaldf$tissue_site_1)] = "BA24"
+finaldf$tissue_site_1 = gsub("Cerebellar Hemisphere", "Cerebellum", finaldf$tissue_site_1)
+finaldf$tissue_site_1[grep("Spinal cord", finaldf$tissue_site_1)]="Spinal cord"
+
+
+table(finaldf$Dataset2, useNA="always")
+table(finaldf$disease, useNA="always")
+table(finaldf$development, useNA="always")
+table(finaldf$tissue_site_1, useNA="always")
+
+# fix - metadata  for Gliomas
+
+# add IDH status for TCGA : 
+tcga_codel = read.delim("PMC4754110_s1_gbm_lgg_codel_status.txt", header=T, stringsAsFactors=FALSE, skip=1, check.names=FALSE)
+tcga_codel = tcga_codel[,c("Case","Study", "IDH status", "1p/19q codeletion")]
+colnames(tcga_codel) = c("TCGA_case", "Study", "TCGA_idh", "TCGA_1p_19q_codel")
+tcga_codel[,3] = gsub("WT", "Wildtype", tcga_codel[,3])
+test = merge(x =finaldf, y =tcga_codel, by.x ="bioproject_s", by.y = "TCGA_case", all.x=TRUE)
+
+finaldf = test[match(rownames(finaldf), test$run_s), ]
+
+colnames(finaldf)[match("TCGA_idh", colnames(finaldf))] ="TCGA_Glioma_IDH"
+colnames(finaldf)[match("TCGA_1p_19q_codel", colnames(finaldf))] ="TCGA_Glioma_1p_19q_codel"
+
+# add grade for TCGA : 
+finaldf$TCGA_Glioma_Grade = rep("Not Available", nrow(finaldf))
+finaldf$TCGA_Glioma_Grade[which(finaldf$disease=="TCGA-GBM")] = "4"
+finaldf$TCGA_Glioma_Grade[which(finaldf$disease=="TCGA-LGG" &
+                             finaldf$clinical_stage_1=="Grade II")] = "2"
+finaldf$TCGA_Glioma_Grade[which(finaldf$disease=="TCGA-LGG" &
+                             finaldf$clinical_stage_1=="Grade III")] = "3"
+
+
+# CGGA : 
+cgga_key = read.delim("CGGA_data/final_cgga_patient_information.txt", 
+                      header=T, stringsAsFactors = FALSE)
+rm_idx = which(is.na( match( cgga_key[,1], finaldf$sample_name_s) ))
+cgga_key = cgga_key[-c(rm_idx), ]
+
+length(which(finaldf$sra_study_s=="SRP027383"))
+table(is.na( match(finaldf$sample_name_s, cgga_key[,1])))
+
+finaldf$CGGA_Glioma_Grade = rep("Not Available", nrow(finaldf))
+finaldf$CGGA_Glioma_1p_19q_codel = rep("Not Available", nrow(finaldf))
+finaldf$CGGA_Glioma_IDH  = rep("Not Available", nrow(finaldf))
+
+finaldf$CGGA_Glioma_1p_19q_codel[ match( cgga_key[,1], finaldf$sample_name_s)] = cgga_key$X1p19q_codeletion_status
+finaldf$CGGA_Glioma_Grade[ match( cgga_key[,1], finaldf$sample_name_s)] = cgga_key$Grade
+finaldf$CGGA_Glioma_IDH[ match( cgga_key[,1], finaldf$sample_name_s)] = cgga_key$IDH_mutation_status
+
+finaldf$CGGA_Glioma_Grade = factor(finaldf$CGGA_Glioma_Grade, levels = c("Not Available", "2", "3", "4"))
+finaldf$CGGA_Glioma_IDH = factor(finaldf$CGGA_Glioma_IDH, levels = c("Not Available", "Mutant", "Wildtype"))
+finaldf$CGGA_Glioma_1p_19q_codel = factor(finaldf$CGGA_Glioma_1p_19q_codel, levels = c("Not Available", "Codel", "Non-codel"))
+
+# add a column for glioma subtype
+finaldf$glioma_subtype = "Not available"
+finaldf$glioma_subtype[which(finaldf$TCGA_Glioma_IDH=="Mutant") ] ="TCGA-IDH-Mutant"
+finaldf$glioma_subtype[which(finaldf$CGGA_Glioma_IDH=="Mutant") ] ="CGGA-IDH-Mutant"
+finaldf$glioma_subtype[which(finaldf$CGGA_Glioma_IDH=="Wildtype") ] ="CGGA-IDH-WT"
+finaldf$glioma_subtype[which(finaldf$TCGA_Glioma_IDH=="Wildtype") ] ="TCGA-IDH-WT"
+finaldf$glioma_subtype[which(finaldf$CGGA_Glioma_1p_19q_codel=="Codel") ] ="CGGA-Oligo"
+finaldf$glioma_subtype[which(finaldf$TCGA_Glioma_1p_19q_codel=="codel") ] ="TCGA-Oligo"
+finaldf$glioma_subtype[which(finaldf$clinical_stage_2=="Solid Tissue Normal") ] ="TCGA-GBM-Matched-Normal"
+as.data.frame(table(finaldf$glioma_subtype, useNA = "always") )
+
+# Create a Summarized Experiment object
+big_rse <- SummarizedExperiment(assays=SimpleList(counts=mat1),
+                                rowRanges=rowRanges(tcga_rse), 
+                                colData=finaldf)
+
+identical(colnames(big_rse), colData(big_rse)$run_s ) 
+
+# save the files. 
+write.table(finaldf, file.path(resdir,"data", "FULL_pca_tsne_umap_combined_analysis_1_28_2021.txt"), 
+            sep ="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+save(big_rse, file =file.path(resdir, "data", "log2_tpm_big_rse_1_28_2021.Rdata"))
+
+
+
+```
+
+
+# Pediatric Data from CBTN 
+
+```{r}
+
+rm(list=ls())
+
+library(rtracklayer)
+library(edgeR)
+library(SummarizedExperiment)
+
+d1 = "~/HollandLabShared/Sonali/OpenPBTA-analysis/data/release-v19-20210423"
+cbtn = readRDS(file.path(d1, "pbta-gene-counts-rsem-expected_count.stranded.rds"))
+temp = cbtn[,1] # first column looks like this : ENSG00000000003.14_TSPAN6
+gene_id = sapply(strsplit(temp, "[_]"), function(x) x[1])
+length(gene_id)
+length(unique(gene_id))
+want = unique(gene_id)
+midx = match(want, gene_id)
+cbtn = cbtn[midx, ]
+rownames(cbtn) = want
+cbtn = cbtn[,-1]
+
+dim(cbtn) # 58302   977
+
+
+gtf = import("~/HollandLabShared/Sonali/OpenPBTA-analysis/data/gencode.v27.primary_assembly.annotation.gtf.gz")
+gtf = gtf[which(gtf$type=="gene") , ]
+cs = intersect( rownames(cbtn), gtf$gene_id)
+length(cs)
+cbtn = cbtn[cs, ]
+gtf = gtf[match(cs, gtf$gene_id ), ]
+ 
+identical(gtf$gene_id, rownames(cbtn)) # TRUE
+
+# KEEP same genes as my brain-umap
+
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_March_2022"
+big_rse = get(load(file.path(resdir,"data", "log2_tpm_big_rse_1_28_2021.Rdata")))
+big_mat = assay(big_rse)
+
+common_genes= intersect( rowRanges(big_rse)$gencode_gene_name,gtf$gene_name)
+
+midx1 = match(common_genes, gtf$gene_name)
+cbtn = cbtn[midx1, ]
+rownames(cbtn) =common_genes
+
+midx2 = match(common_genes, rowRanges(big_rse)$gencode_gene_name)
+big_rse = big_rse[midx2, ]
+big_mat = big_mat[midx2, ]
+rownames(big_mat) = common_genes
+
+midx3 = match(common_genes, gtf$gene_name)
+gtf = gtf[ midx3, ]
+
+# finally make TPM counts. 
+rpkm_data = rpkm(cbtn, gene.length = width(gtf))
+tpm_data =  apply(rpkm_data, 2, function(x){
+   (x/sum(x))*1000000
+})
+log2_tpm_cbtn  = log2(tpm_data +1)
+
+saveRDS(log2_tpm_cbtn, file.path(resdir, "data","log2_tpm_cbtn.rds") )
+
+```
