@@ -1,0 +1,273 @@
+---
+title: "Combining datasets and Building BRAIN-UMAP"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup}
+rm(list=ls())
+library(SummarizedExperiment)
+library(umap)
+library(Rtsne)
+library(sva)
+
+resdir= "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+log2_tpm_cbtn = readRDS(file.path(resdir,  "data","log2_tpm_cbtn.rds") )
+merge_df = read.delim(file.path(resdir, "data","chosen_subset_rnaseq_sample_info.txt"), 
+                      header=T, stringsAsFactors = FALSE)
+keep_idx = match(merge_df[,1], colnames(log2_tpm_cbtn))
+table(is.na(keep_idx))
+log2_tpm_cbtn = log2_tpm_cbtn[, keep_idx]
+rm = which(merge_df$composition=="Derived Cell Line")
+log2_tpm_cbtn= log2_tpm_cbtn[, -rm]
+merge_df = merge_df[-rm, ]
+
+finaldf = read.delim(file.path(resdir, "data", "FULL_pca_tsne_umap_combined_analysis_1_28_2021.txt"), 
+     header=TRUE, stringsAsFactors = FALSE, check.names = FALSE )
+
+big_rse = get(load(file.path(resdir, "data", "log2_tpm_big_rse_1_28_2021.Rdata")))
+big_mat = assay(big_rse)
+
+
+# keep identical genes. 
+common_genes= intersect( rowRanges(big_rse)$gencode_gene_name,rownames(log2_tpm_cbtn))
+
+midx2 = match(common_genes, rowRanges(big_rse)$gencode_gene_name)
+big_rse = big_rse[midx2, ]
+big_mat = big_mat[midx2, ]
+rownames(big_mat) = common_genes
+
+midx1 = match(common_genes, rownames(log2_tpm_cbtn))
+log2_tpm_cbtn = log2_tpm_cbtn[midx1, ]
+
+identical(rowRanges(big_rse)$gencode_gene_name,rownames(log2_tpm_cbtn))
+
+group = c(finaldf$Dataset2, rep("CBTN", ncol(log2_tpm_cbtn)) )
+#---------------------------------
+# all together :  batch correction 
+#----------------------------------
+batch = c(rep("batch1", ncol(big_mat)), rep("batch2", ncol(log2_tpm_cbtn)))
+mat1 = cbind(big_mat, log2_tpm_cbtn)
+combat_edata1 = ComBat(dat=mat1, batch=batch, mod=NULL, par.prior=TRUE, prior.plots=FALSE)
+
+saveRDS(combat_edata1, file.path(resdir, "data","log2_tpm_combatseq_cbtn_brain_umap_8_27_2021.rds") )
+```
+
+
+# All together without batch correction
+
+```{r}
+# old code - by default gives only umap in 2d. 
+umap_out <- umap(t(mat1), random_state = 123, min_dist = 0.5) # Run UMAP
+umap_2d = umap_out$layout
+colnames(umap_2d) = c("UMAP1_2d", "UMAP2_2d")
+
+# 3d umap
+custom.settings = umap.defaults
+custom.settings$n_components = 3
+umap_out = umap(t(mat1), config = custom.settings, random_state = 123, min_dist = 0.5)
+umap_3d = umap_out$layout
+colnames(umap_3d) = c("UMAP1_3d", "UMAP2_3d", "UMAP3_3d")
+
+# add in PCA 
+pc1= prcomp(t( mat1) )
+percentVar <- (pc1$sdev^2 / sum( pc1$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+pc_data1 = data.frame(PC1=pc1$x[,1], PC2=pc1$x[,2] )
+message(" PCA =", " pc1:", percentVar[1], " pc2:", percentVar[2]) #  PCA = pc1:30.11 pc2:22.78
+
+# Set a seed if you want reproducible results
+set.seed(42)
+tsne_out <- Rtsne(t(mat1),pca=FALSE,perplexity=30,theta=0.0) # Run TSNE
+tsne_data1 = tsne_out$Y
+colnames(tsne_data1) = c("tSNE_1", "tSNE_2")
+
+# save file for plotting.
+umap_data1 = data.frame(umap_2d,  umap_3d, pc_data1, tsne_data1, group , sampleName = colnames(mat1))
+write.table(umap_data1, file.path(resdir,"tables", "no_batch_correction_umapdata_with_CBTN_2_1_2022.txt"), 
+            sep ="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+```
+
+
+# UMAP :  ALL TOGETHER (with batch correction)
+
+```{r}
+# by default gives only umap in 2d. 
+umap_out <- umap(t(combat_edata1), random_state = 123, min_dist = 0.5) # Run UMAP
+umap_2d = umap_out$layout
+colnames(umap_2d) = c("UMAP1_2d", "UMAP2_2d")
+
+# 3d umap
+custom.settings = umap.defaults
+custom.settings$n_components = 3
+umap_out = umap(t(combat_edata1), config = custom.settings, random_state = 123, min_dist = 0.5)
+umap_3d = umap_out$layout
+colnames(umap_3d) = c("UMAP1_3d", "UMAP2_3d", "UMAP3_3d")
+
+# add in PCA 
+pc1= prcomp(t( combat_edata1) )
+percentVar <- (pc1$sdev^2 / sum( pc1$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+pc_data1 = data.frame(PC1=pc1$x[,1], PC2=pc1$x[,2] )
+message(" PCA =", " pc1:", percentVar[1], " pc2:", percentVar[2]) #   PCA = pc1:31.76 pc2:15.2
+
+# Set a seed if you want reproducible results
+set.seed(42)
+tsne_out <- Rtsne(t(combat_edata1),pca=FALSE,perplexity=30,theta=0.0) # Run TSNE
+tsne_data1 = tsne_out$Y
+colnames(tsne_data1) = c("tSNE_1", "tSNE_2")
+
+umap_data1 = data.frame(umap_2d,  umap_3d, pc_data1, tsne_data1, group , sampleName = colnames(combat_edata1))
+write.table(umap_data1, file.path(resdir, "tables", "umapdata_with_CBTN_8_27_2021.txt"), 
+            sep ="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+as.data.frame(table(umap_data1$group))
+```
+
+# UMAP : gtex & cbtn (with batch correction)
+
+```{r}
+gtex_idx  = which(group %in% c("GTEX", "CBTN"))
+sub_edata1= combat_edata1[ , gtex_idx]
+sub_group = group[gtex_idx]
+
+
+# by default gives only umap in 2d. 
+umap_out <- umap(t(sub_edata1), random_state = 123, min_dist = 0.5) # Run UMAP
+umap_2d = umap_out$layout
+colnames(umap_2d) = c("UMAP1_2d", "UMAP2_2d")
+
+# 3d umap
+custom.settings = umap.defaults
+custom.settings$n_components = 3
+umap_out = umap(t(sub_edata1), config = custom.settings, random_state = 123, min_dist = 0.5)
+umap_3d = umap_out$layout
+colnames(umap_3d) = c("UMAP1_3d", "UMAP2_3d", "UMAP3_3d")
+
+# add in PCA 
+pc1= prcomp(t( sub_edata1) )
+percentVar <- (pc1$sdev^2 / sum( pc1$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+pc_data1 = data.frame(PC1=pc1$x[,1], PC2=pc1$x[,2] )
+message(" PCA =", " pc1:", percentVar[1], " pc2:", percentVar[2]) #  PCA = pc1:32.88 pc2:12.474
+
+# Set a seed if you want reproducible results
+set.seed(42)
+tsne_out <- Rtsne(t(sub_edata1),pca=FALSE,perplexity=30,theta=0.0) # Run TSNE
+tsne_data1 = tsne_out$Y
+colnames(tsne_data1) = c("tSNE_1", "tSNE_2")
+
+umap_data1 = data.frame(umap_2d,  umap_3d, pc_data1, tsne_data1, group=sub_group , sampleName = colnames(sub_edata1))
+write.table(umap_data1, file.path(resdir, "tables", "umapdata_GTEX_with_CBTN_8_27_2021.txt"), 
+            sep ="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+as.data.frame(table(umap_data1$group))
+```
+
+# UMAP : TCGA  & cbtn (with batch correction)
+
+```{r}
+gtex_idx  = which(group %in% c("TCGA-GBM","TCGA-LGG",  "CBTN"))
+sub_edata1= combat_edata1[ , gtex_idx]
+sub_group = group[gtex_idx]
+table(sub_group)
+
+library(umap)
+# old code - by default gives only umap in 2d. 
+umap_out <- umap(t(sub_edata1), random_state = 123, min_dist = 0.5) # Run UMAP
+umap_2d = umap_out$layout
+colnames(umap_2d) = c("UMAP1_2d", "UMAP2_2d")
+
+# 3d umap
+custom.settings = umap.defaults
+custom.settings$n_components = 3
+umap_out = umap(t(sub_edata1), config = custom.settings, random_state = 123, min_dist = 0.5)
+umap_3d = umap_out$layout
+colnames(umap_3d) = c("UMAP1_3d", "UMAP2_3d", "UMAP3_3d")
+
+# add in PCA 
+pc1= prcomp(t( sub_edata1) )
+percentVar <- (pc1$sdev^2 / sum( pc1$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+pc_data1 = data.frame(PC1=pc1$x[,1], PC2=pc1$x[,2] )
+message(" PCA =", " pc1:", percentVar[1], " pc2:", percentVar[2]) #PCA =PCA = pc1:21.13 pc2:11.97
+
+library(Rtsne)
+# Set a seed if you want reproducible results
+set.seed(42)
+tsne_out <- Rtsne(t(sub_edata1),pca=FALSE,perplexity=30,theta=0.0) # Run TSNE
+tsne_data1 = tsne_out$Y
+colnames(tsne_data1) = c("tSNE_1", "tSNE_2")
+
+
+umap_data1 = data.frame(umap_2d,  umap_3d, pc_data1, tsne_data1,  group=sub_group , sampleName = colnames(sub_edata1))
+write.table(umap_data1, file.path(resdir, "tables", "umapdata_TCGA_with_CBTN_8_27_2021.txt"), 
+            sep ="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+as.data.frame(table(umap_data1$group))
+```
+
+
+
+
+# create a sample map between rna-seq and WGS data 
+```{r}
+df  = read.delim("~/HollandLabShared/Sonali/OpenPBTA-analysis/data/release-v19-20210423/pbta-histologies.tsv", 
+                 header=T, stringsAsFactors=FALSE)
+
+df = df[, c( "Kids_First_Biospecimen_ID", "experimental_strategy" , "sample_id", "Kids_First_Participant_ID")]
+sp = split(df, df$sample_id)
+
+ans = lapply(sp, function(temp) {
+  rna = paste0(temp[which(temp$experimental_strategy=="RNA-Seq"), "Kids_First_Biospecimen_ID"], collapse=",")
+  wgs = paste0(temp[which(temp$experimental_strategy=="WGS"), "Kids_First_Biospecimen_ID"], collapse=",")
+  c(unique(temp$sample_id), rna, wgs)
+})
+
+ans_df = do.call( rbind, ans )
+colnames(ans_df) = c("sample_id", "rnaseq_id", "wgs_id")
+write.table(ans_df, file.path(resdir, "tables", "sample_map.txt"), sep ="\t", 
+            quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+
+# Add metadata to UMAP 
+```{r}
+rm(list=ls())
+resdir= "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022/tables"
+setwd(resdir)
+library(readxl)
+merge_df = read.delim("umapdata_with_CBTN_8_27_2021_with_metadata.txt", 
+                      header=T , stringsAsFactors = FALSE)
+
+# SANITY CHECK 
+x = "umapdata_with_CBTN_8_27_2021.txt"
+temp = read.delim(x, header=T, stringsAsFactors = FALSE)
+identical(temp$sampleName, merge_df$rnaseq_sampleName) #[1] TRUE
+identical(temp$UMAP1_2d, merge_df$UMAP1_2d) #[1] TRUE
+identical(temp$UMAP2_2d, merge_df$UMAP2_2d) #[1] TRUE
+
+
+fls = c(
+        "umapdata_TCGA_with_CBTN_8_27_2021.txt", 
+        "umapdata_GTEX_with_CBTN_8_27_2021.txt") 
+
+l1 = lapply(fls, function(x){
+  temp = read.delim(x, header=T, stringsAsFactors = FALSE)
+  want  = merge_df[ match(temp$sampleName, merge_df$rnaseq_sampleName), 12:22]
+  temp2 = data.frame(cbind(temp, want))
+  if(nrow(temp)!=nrow(temp2)){
+    stop(x)
+  }
+  write.table(temp2, gsub(".txt", "with_metadata.txt", x),
+              sep ="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+  
+ temp2
+})
+
+```
