@@ -1,0 +1,205 @@
+---
+title: "Reproducing Figure 8"
+author: "Sonali Arora"
+date: "Jan 3, 2023"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r }
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(ggplot2)
+myPalette <- colorRampPalette(rev(brewer.pal(11, "RdYlBu")))
+sc <- scale_colour_gradientn(colours = myPalette(12), limits=c(0, 12))
+
+s1 = 3# size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 15
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=1
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+theme_clean <- theme_void() +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    legend.position = "right",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+gistic_levs = c(2, 1, 0,  -1, -2)
+gistic_cols = c ("firebrick", "firebrick1","grey80",  "dodgerblue", "darkblue"  )
+
+umap_data1 = read.delim("umap_data1.txt", header=T, stringsAsFactors = FALSE)
+
+cnv = read.delim("cnv.txt", header=T, stringsAsFactors = FALSE, row.names=1)
+fusions = read.delim("mutations/high_conf_tcga_cbtn_gene_fusions_hg38_11_8_2022.txt", header=T, stringsAsFactors = FALSE)
+keep = which(fusions$gene_a_type=="protein_coding" | fusions$gene_b_type=="protein_coding")
+fusions = fusions[keep, ]
+rm = which(fusions$Gene_A==fusions$Gene_B)
+fusions = fusions[-rm, ]
+mutdf = read.delim("mutations/tcga_cbtn_mutations.txt", header=T, stringsAsFactors = FALSE)
+
+big_mat = readRDS("log2_tpm_combatseq_cbtn_brain_umap_8_27_2021.rds")
+big_mat = big_mat[,match(umap_data1$sampleName, colnames(big_mat))]
+
+
+my_amazing_fig = function(goi){
+  l1 = lapply(goi, function(my_goi){
+      message(my_goi)
+      # GENE EXPRESSION
+      mat= umap_data1
+      mat$gene_exp = unlist(big_mat[ match(my_goi, rownames(big_mat)), ])
+      ylim = max(mat$gene_exp)
+      
+      sc <- scale_colour_gradientn(colours = myPalette(ylim), limits=c(0, ylim))
+      
+      mat = mat[ order(mat$gene_exp, decreasing=FALSE), ]
+      fig1 =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=gene_exp )) +
+        geom_point(size=s1) + 
+        #ggtitle(paste0("Gene expression:", my_goi)) +
+        sc +
+        theme_clean
+    
+      # Mutations.
+      # Note: mutdf matches 2 columns in umap_data1 , 
+      # bioproject_s for TCGA and 
+      # wgs_sampleName for Pediatric Tumors. 
+      mat= umap_data1
+      mat$mut_status = rep("No Mutation", nrow(mat))
+      mut_ids = mutdf[which(mutdf$gene ==my_goi), 1]
+      midx  = na.omit(match(mut_ids, mat$bioproject_id))
+      mat$mut_status[midx] = "Mutation"
+      
+      cidx = sapply(mut_ids, function(y) grep(paste0("^", y,"|", y, "$"),  mat$wgs_sampleName))
+      cidx = unlist(cidx)
+      mat$mut_status[cidx] = "Mutation"
+      
+      mat = mat[ order(mat$mut_status, decreasing =T), ]
+      mat$mut_status = factor(mat$mut_status, levels =c("No Mutation", "Mutation"))
+      
+      fig2 =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=mut_status )) +
+        geom_point(size=s1) + 
+        #ggtitle(paste0("Mutations:", my_goi)) +
+        scale_colour_manual(labels =c("No Mutation", "Mutation") ,
+                            values = c("grey80", "darkslategrey" )) +
+        theme_clean  + #theme(legend.position = c(0.1, 0.8))
+        theme(legend.position ="none")
+      
+      # copy number 
+      mat= umap_data1
+      mat$cnv_status = unlist(cnv[ match(my_goi, rownames(cnv)), ])
+      mat = mat[ order(abs(mat$cnv_status), decreasing=FALSE), ]
+      
+      keep_idx  = match(unique(mat$cnv_status), gistic_levs)
+      temp_gistic_levs = gistic_levs[keep_idx]
+      temp_gistic_cols = gistic_cols[keep_idx]
+      
+      o1 = order(temp_gistic_levs)
+      temp_gistic_levs = temp_gistic_levs[o1]
+      temp_gistic_cols = temp_gistic_cols[o1]
+      
+      rm  = which(mat$cnv_status==3)
+      if(length(rm)>0){
+        mat$cnv_status[rm] = 2
+      }
+      mat$cnv_status = factor(mat$cnv_status, levels =temp_gistic_levs)
+      
+      fig3 =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=cnv_status )) +
+        geom_point(size=s1) + 
+        scale_colour_manual(labels =temp_gistic_levs ,
+                            values = temp_gistic_cols) +
+        theme_clean 
+      
+      # gene fusions
+      idx1 = which(fusions$Gene_A ==my_goi)
+      idx2 = which(fusions$Gene_B ==my_goi)
+      idx = unique( c(idx1, idx2))
+      fus_ids = fusions[idx, ]$Sample
+      mat= umap_data1
+      mat$fus_status = rep("No Fusion", nrow(mat))
+      i1 = na.omit(match(fus_ids, mat$sampleName)) # match for CBTN
+      i2 = na.omit(match(fus_ids, mat$bioproject_id)) # match with TCGA
+      midx  = unique(c( i1, i2 ))
+      mat$fus_status[midx] = "Fusion"
+      mat = mat[ order(mat$fus_status, decreasing =T), ]
+      mat$fus_status = factor(mat$fus_status, levels =c("No Fusion", "Fusion"))
+      fig4 =  ggplot(mat, aes(UMAP1_2d, UMAP2_2d, color=fus_status )) +
+        geom_point(size=s1) + 
+        #ggtitle(paste0("Fusions:", my_goi)) +
+        scale_colour_manual(labels =c("No Fusion", "Fusion") ,
+                            values = c("grey80", "chocolate4" )) +
+        theme_clean + #theme(legend.position = c(0.1, 0.8))
+        theme(legend.position = "none")       
+        
+      lst2 = list( fig1, fig2, fig3, fig4)
+
+    })
+  l1 
+}
+
+
+resdir = "~/HollandLabShared/Sonali/MultiDisease_Paper/analysis/test_Dec_2022"
+
+goi = c("POLD2", "RPA2", "EXO1", "POLD1" , "MSH6")
+l1 = my_amazing_fig(goi )
+lst2 = list(l1[[1]][[1]],l1[[1]][[2]], l1[[1]][[3]], l1[[1]][[4]], 
+            l1[[2]][[1]],l1[[2]][[2]], l1[[2]][[3]], l1[[2]][[4]], 
+            l1[[3]][[1]],l1[[3]][[2]], l1[[3]][[3]], l1[[3]][[4]], 
+            l1[[4]][[1]],l1[[4]][[2]], l1[[4]][[3]], l1[[4]][[4]], 
+            l1[[5]][[1]],l1[[5]][[2]], l1[[5]][[3]], l1[[5]][[4]])
+ml <- marrangeGrob(lst2, nrow=4, ncol=5)
+pdf(file.path(resdir,"figures", "SuppFig8a_reactome_mismatch_repair_12_9_2022.pdf"), width =24, height =16)
+print(ml)
+dev.off()
+
+goi = c("POLD3", "POLD4", "PCNA", "MLH1" , "LIG1")
+l1 = my_amazing_fig(goi )
+lst2 = list(l1[[1]][[1]],l1[[1]][[2]], l1[[1]][[3]], l1[[1]][[4]], 
+            l1[[2]][[1]],l1[[2]][[2]], l1[[2]][[3]], l1[[2]][[4]], 
+            l1[[3]][[1]],l1[[3]][[2]], l1[[3]][[3]], l1[[3]][[4]], 
+            l1[[4]][[1]],l1[[4]][[2]], l1[[4]][[3]], l1[[4]][[4]], 
+            l1[[5]][[1]],l1[[5]][[2]], l1[[5]][[3]], l1[[5]][[4]])
+ml <- marrangeGrob(lst2, nrow=4, ncol=5)
+pdf(file.path(resdir,"figures", "SuppFig8b_reactome_mismatch_repair_12_9_2022_v2.pdf"), width =24, height =16)
+print(ml)
+dev.off()
+
+goi = c("MSH2", "MSH3", "RPA1", "RPA3" , "PMS2")
+l1 = my_amazing_fig(goi )
+lst2 = list(l1[[1]][[1]],l1[[1]][[2]], l1[[1]][[3]], l1[[1]][[4]], 
+            l1[[2]][[1]],l1[[2]][[2]], l1[[2]][[3]], l1[[2]][[4]], 
+            l1[[3]][[1]],l1[[3]][[2]], l1[[3]][[3]], l1[[3]][[4]], 
+            l1[[4]][[1]],l1[[4]][[2]], l1[[4]][[3]], l1[[4]][[4]], 
+            l1[[5]][[1]],l1[[5]][[2]], l1[[5]][[3]], l1[[5]][[4]])
+ml <- marrangeGrob(lst2, nrow=4, ncol=5)
+pdf(file.path(resdir,"figures", "SuppFig8c_reactome_mismatch_repair_12_9_2022_v3.pdf"), width =24, height =16)
+print(ml)
+dev.off()
+
+
+# Oncogenes
+goi = c("EGFR",  "PTEN", "CIC",   "BRAF", "ALK")
+l1 = my_amazing_fig(goi )
+lst2 = list(l1[[1]][[1]],l1[[1]][[2]], l1[[1]][[3]], l1[[1]][[4]], 
+            l1[[2]][[1]],l1[[2]][[2]], l1[[2]][[3]], l1[[2]][[4]], 
+            l1[[3]][[1]],l1[[3]][[2]], l1[[3]][[3]], l1[[3]][[4]], 
+            l1[[4]][[1]],l1[[4]][[2]], l1[[4]][[3]], l1[[4]][[4]], 
+            l1[[5]][[1]],l1[[5]][[2]], l1[[5]][[3]], l1[[5]][[4]])
+ml <- marrangeGrob(lst2, nrow=4, ncol=5)
+pdf(file.path(resdir,"figures", "Fig8_ADULT_gene_Resource_12_9_2022.pdf"), width =24, height =16)
+print(ml)
+dev.off()
+```
+
